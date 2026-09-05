@@ -43,6 +43,7 @@ type DocumentItem = {
   status: "pending" | "processing" | "ready" | "failed";
   page_count: number | null;
   chunk_count: number;
+  open_impact_count: number;
   owner: { id: string; display_name: string };
   collaborators: Array<{ id: string; display_name: string }>;
 };
@@ -205,7 +206,7 @@ export function DocumentsPageContent() {
               <TableHead>Type</TableHead>
               <TableHead>Owner</TableHead>
               <TableHead>Shared with</TableHead>
-              <TableHead>Contents</TableHead>
+              <TableHead>Issues</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -248,8 +249,9 @@ export function DocumentsPageContent() {
                       : "—"}
                   </TableCell>
                   <TableCell>
-                    {item.chunk_count} chunks
-                    {item.page_count ? ` · ${item.page_count} pages` : ""}
+                    <Badge variant={item.open_impact_count > 0 ? "destructive" : "outline"}>
+                      {item.open_impact_count} {item.open_impact_count === 1 ? "issue" : "issues"}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge
