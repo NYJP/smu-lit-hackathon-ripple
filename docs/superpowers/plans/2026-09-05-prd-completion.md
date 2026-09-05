@@ -114,19 +114,19 @@
 - Modify: `api/routers/recommendations.py`
 - Modify: `api/access.py`
 
-- [ ] Remove the accidental `@router.get("/{impact_id}")` decoration from `ImpactPatch` and delete the duplicate `POST /impacts/{impact_id}/recommendation` route that references an undefined handler.
-- [ ] Normalize literal comparisons before model evaluation: Unicode normalization, whitespace collapse, case folding, number-word conversion for zero through twenty, unit aliases, and punctuation-insensitive equality.
-- [ ] Implement a six-dependency structured impact batch returning exactly `{ dependency_id, level, reason, evidence_quote, confidence }`, where level is `none|low|medium|high`. Reject missing/duplicate dependency IDs and invalid evidence quotes.
-- [ ] Store one impact row per evaluated dependency, including `none`, and read/write `impact_cache` around model calls. Return aggregate counts, cache hits, usage, and estimated cost without committing inside the service.
-- [ ] Generate recommendations through a structured prompt returning `{ replacement_text, rationale, source_citations }`. Require a minimal edit grounded in the affected chunk and changed requirement; preserve the deterministic literal substitution only as an explicitly labeled fallback after model failure.
-- [ ] Make `GET /changes` return title, source, effective date, operation, organization-wide affected-document count, impact counts by level, simulation state, and pagination.
-- [ ] Make `GET /changes/{id}` return previous/new requirements, regulation metadata, organization-wide aggregate counts, affected documents with owners and impact levels, and analysis job state.
-- [ ] Make `GET /changes/{id}/impacts` support `level`, `document_id`, `owner_id`, `status`, `limit`, and `offset`, with organization-wide counts.
-- [ ] Make `GET /impacts/{id}` return change, regulation, requirement versions, dependency, document/chunk context, exact evidence offsets, recommendation, decision state, and named decision actor/time.
-- [ ] Allow every authenticated account to accept, edit, reject, and resolve. Simulated recommendations still cannot be accepted until promotion.
-- [ ] Make decisions idempotent and append-only in audit history while maintaining the current recommendation/impact status projection.
-- [ ] Run `python -m compileall api`; inspect the generated OpenAPI document to confirm one route per method/path and manually query a PDPF high-impact detail.
-- [ ] Commit with message `feat: complete change impact and recommendation contracts`.
+- [x] Remove the accidental `@router.get("/{impact_id}")` decoration from `ImpactPatch` and delete the duplicate `POST /impacts/{impact_id}/recommendation` route that references an undefined handler.
+- [x] Normalize literal comparisons before model evaluation: Unicode normalization, whitespace collapse, case folding, number-word conversion for zero through twenty, unit aliases, and punctuation-insensitive equality.
+- [x] Implement a six-dependency structured impact batch returning exactly `{ dependency_id, level, reason, evidence_quote, confidence }`, where level is `none|low|medium|high`. Reject missing/duplicate dependency IDs and invalid evidence quotes.
+- [x] Store one impact row per evaluated dependency, including `none`, and read/write `impact_cache` around model calls. Return aggregate counts, cache hits, usage, and estimated cost without committing inside the service.
+- [x] Generate recommendations through a structured prompt returning `{ replacement_text, rationale, source_citations }`. Require a minimal edit grounded in the affected chunk and changed requirement; preserve the deterministic literal substitution only as an explicitly labeled fallback after model failure.
+- [x] Make `GET /changes` return title, source, effective date, operation, organization-wide affected-document count, impact counts by level, simulation state, and pagination.
+- [x] Make `GET /changes/{id}` return previous/new requirements, regulation metadata, organization-wide aggregate counts, affected documents with owners and impact levels, and analysis job state.
+- [x] Make `GET /changes/{id}/impacts` support `level`, `document_id`, `owner_id`, `status`, `limit`, and `offset`, with organization-wide counts.
+- [x] Make `GET /impacts/{id}` return change, regulation, requirement versions, dependency, document/chunk context, exact evidence offsets, recommendation, decision state, and named decision actor/time.
+- [x] Allow every authenticated account to accept, edit, reject, and resolve. Simulated recommendations still cannot be accepted until promotion.
+- [x] Make decisions idempotent and append-only in audit history while maintaining the current recommendation/impact status projection.
+- [x] Run `python -m compileall api`; inspect the generated OpenAPI document to confirm one route per method/path and manually query a PDPF high-impact detail.
+- [x] Commit with message `feat: complete change impact and recommendation contracts`.
 
 ### Task 4: Turn scans and change analysis into complete background workflows
 

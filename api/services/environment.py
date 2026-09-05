@@ -241,7 +241,9 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
     seeded, changes = _seed_requirements(conn, primary_id, amendment_id, item["requirements"])
     embedding_count, embedding_usage = _embed_environment(conn)
     dependency_count = _seed_dependencies(conn, seeded)
-    impact_count = sum(impact.analyse_change(conn, change_id) for change_id in changes)
+    impact_count = sum(
+        impact.analyse_change(conn, change_id).impacts_created for change_id in changes
+    )
     expected_embeddings = conn.execute(
         """SELECT
              (SELECT COUNT(*) FROM document_chunks

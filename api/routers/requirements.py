@@ -122,6 +122,7 @@ def patch_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.
     conn.commit()
     if change_id:
         impact.analyse_change(conn, change_id)
+        conn.commit()
     return {"requirement": dict(conn.execute("SELECT * FROM regulatory_requirements WHERE id=?", (requirement_id,)).fetchone()), "change_id": change_id, "job_id": None}
 
 

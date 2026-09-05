@@ -49,7 +49,9 @@ def create_scan(payload: ScanCreate, conn: sqlite3.Connection = Depends(get_db),
         if payload.scope == "full" or conn.execute("SELECT 1 FROM mapping_passes WHERE document_id=? LIMIT 1", (doc_id,)).fetchone() is None:
             added += mapping.map_document(conn, doc_id, sid).dependencies_added
     changes = conn.execute("SELECT id FROM regulatory_changes WHERE analysis_status != 'complete'").fetchall()
-    impacts_created = sum(impact.analyse_change(conn, row["id"]) for row in changes)
+    impacts_created = sum(
+        impact.analyse_change(conn, row["id"]).impacts_created for row in changes
+    )
     conn.execute("UPDATE dependencies SET status='dismissed', rationale='Source text changed' WHERE evidence_span IS NOT NULL AND id IN (SELECT d.id FROM dependencies d JOIN document_chunks c ON c.id=d.document_chunk_id WHERE instr(c.content,d.evidence_span)=0)")
     conn.execute("UPDATE scans SET status='succeeded', documents_scanned=?, requirements_scanned=?, dependencies_added=?, impacts_created=?, finished_at=? WHERE id=?", (len(document_ids), gaps["unmapped_pairs"], added, impacts_created, _now(), sid)); conn.commit()
     return {"scan_id": sid}
