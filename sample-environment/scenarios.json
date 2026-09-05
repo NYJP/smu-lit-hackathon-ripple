@@ -1,21 +1,30 @@
 {
   "pdpf": {
     "label": "PDPF",
-    "description": "Personal data retention, access controls, and breach escalation.",
+    "description": "Detailed personal-data governance covering retention, incidents, access requests, vendors, transfers, and consent.",
     "root": ".",
     "primary": {"file": "regulations/Personal Data Retention Regulation 2024.pdf", "title": "Personal Data Retention Regulation 2024", "short_name": "PDPF"},
     "amendment": {"file": "regulations/Personal Data Retention Amendment 2026.pdf", "title": "Personal Data Retention Amendment 2026", "short_name": "PDPF"},
     "documents": [
-      {"file": "documents/Customer Data SOP.docx", "owner": "Alex Tan", "doc_type": "sop"},
+      {"file": "documents/Customer Data SOP.docx", "owner": "Alex Tan", "doc_type": "sop", "shared_with": ["Priya Menon", "Sam Rahim"]},
       {"file": "documents/Data Retention Policy.pdf", "owner": "Priya Menon", "doc_type": "policy"},
       {"file": "documents/DPA Template.docx", "owner": "Alex Tan", "doc_type": "template"},
       {"file": "documents/Employee Handbook.pdf", "owner": "Sam Rahim", "doc_type": "training"},
-      {"file": "documents/Privacy Playbook.txt", "owner": "Priya Menon", "doc_type": "playbook"}
+      {"file": "documents/Privacy Playbook.txt", "owner": "Priya Menon", "doc_type": "playbook", "shared_with": ["Alex Tan", "Sam Rahim"]},
+      {"file": "scenarios/pdpf/documents/Data Breach Response Procedure.txt", "owner": "Sam Rahim", "doc_type": "sop", "shared_with": ["Priya Menon", "Alex Tan"]},
+      {"file": "scenarios/pdpf/documents/Data Subject Request Procedure.txt", "owner": "Alex Tan", "doc_type": "sop", "shared_with": ["Priya Menon", "Sam Rahim"]},
+      {"file": "scenarios/pdpf/documents/Vendor Processing Standard.txt", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "scenarios/pdpf/documents/Cross-Border Transfer Assessment.txt", "owner": "Sam Rahim", "doc_type": "checklist"},
+      {"file": "scenarios/pdpf/documents/Consent Management Policy.txt", "owner": "Priya Menon", "doc_type": "policy"}
     ],
     "requirements": [
       {"public_ref": "PDPF-001", "subject": "customer_record_retention", "requirement_type": "duration", "text": "Customer records must be retained for 5 years after the relationship ends.", "value": "5 years", "value_numeric": 5, "value_unit": "years", "source_section": "Section 4", "new_text": "Customer records must be retained for 7 years after the relationship ends.", "new_value": "7 years", "new_value_numeric": 7, "change_type": "duration", "change_summary": "Customer Record Retention: 5 years to 7 years", "match_phrases": ["5 years"]},
       {"public_ref": "PDPF-002", "subject": "data_access_restriction", "requirement_type": "obligation", "text": "Access to personal data must be limited to authorised personnel.", "source_section": "Section 6", "match_phrases": ["applicable data protection law"]},
-      {"public_ref": "PDPF-003", "subject": "breach_notification", "requirement_type": "notification", "text": "Material personal-data breaches must be escalated promptly.", "source_section": "Section 8", "match_phrases": ["material personal-data breaches"]}
+      {"public_ref": "PDPF-003", "subject": "breach_notification", "requirement_type": "notification", "text": "Notifiable personal-data breaches must be reported within 72 hours.", "value": "72 hours", "value_numeric": 72, "value_unit": "hours", "source_section": "Section 8", "new_text": "Notifiable personal-data breaches must be reported within 24 hours.", "new_value": "24 hours", "new_value_numeric": 24, "change_type": "duration", "change_summary": "Breach notification deadline: 72 hours to 24 hours", "match_phrases": ["72 hours"]},
+      {"public_ref": "PDPF-004", "subject": "data_subject_request_deadline", "requirement_type": "duration", "text": "Data-subject access requests must be completed within 30 days.", "value": "30 days", "value_numeric": 30, "value_unit": "days", "source_section": "Section 10", "new_text": "Data-subject access requests must be completed within 21 days.", "new_value": "21 days", "new_value_numeric": 21, "change_type": "duration", "change_summary": "Access request deadline: 30 days to 21 days", "match_phrases": ["30 days"]},
+      {"public_ref": "PDPF-005", "subject": "vendor_processing_contract", "requirement_type": "obligation", "text": "Processor agreements must contain confidentiality, security, and audit duties.", "source_section": "Section 12", "match_phrases": ["processor agreements"]},
+      {"public_ref": "PDPF-006", "subject": "cross_border_transfer_assessment", "requirement_type": "procedure", "text": "A transfer impact assessment must be completed before personal data is transferred overseas.", "source_section": "Section 14", "match_phrases": ["transfer impact assessment"]},
+      {"public_ref": "PDPF-007", "subject": "consent_withdrawal", "requirement_type": "obligation", "text": "Consent withdrawal requests must be applied to active processing systems without undue delay.", "source_section": "Section 16", "match_phrases": ["consent withdrawal"]}
     ]
   },
   "merger-acquisition": {

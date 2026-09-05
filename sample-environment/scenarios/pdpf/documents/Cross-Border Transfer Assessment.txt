@@ -1,0 +1,10 @@
+Cross-Border Transfer Assessment
+
+1 Transfer description
+Record the exporter, recipient, data subjects, data categories, purpose, frequency, destination, storage period, and onward transfers.
+
+2 Risk assessment
+A transfer impact assessment must be completed before personal data is transferred overseas. The assessment considers local access laws, enforceability, technical safeguards, and practical experience.
+
+3 Approval and review
+Privacy approves the transfer mechanism and supplementary measures. Assessments are reviewed when the service, destination, recipient, or applicable law changes.

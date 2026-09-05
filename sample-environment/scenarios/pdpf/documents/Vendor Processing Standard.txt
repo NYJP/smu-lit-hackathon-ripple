@@ -1,0 +1,10 @@
+Vendor Processing Standard
+
+1 Due diligence
+Privacy and Security assess the nature of processing, data categories, hosting locations, subcontractors, control evidence, and incident history before onboarding.
+
+2 Contract controls
+Processor agreements must include confidentiality, security, deletion, cooperation, audit, breach notification, and subprocessor duties. Material deviations require Privacy approval.
+
+3 Ongoing oversight
+Critical processors are reviewed annually. Control failures are assigned an owner and tracked to closure before contract renewal.

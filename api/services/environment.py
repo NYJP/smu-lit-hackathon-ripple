@@ -9,9 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import sqlite_vec
+
 from api import db
 from api.errors import ApiError
-from api.services import impact, parsing, storage
+from api.services import impact, openai, parsing, storage
 
 SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample-environment"
 SCENARIOS_FILE = SAMPLE_ROOT / "scenarios.json"
@@ -91,6 +93,14 @@ def _load_document(conn: sqlite3.Connection, source: Path, item: dict[str, Any])
         "INSERT INTO documents (id,owner_id,name,doc_type,file_path,file_name,mime_type,page_count,status,created_at) VALUES (?,?,?,?,?,?,?,?, 'ready',?)",
         (document_id, _owner(conn, item["owner"]), source.stem, item["doc_type"], relative_path, source.name, mime_type, result.page_count, now),
     )
+    owner_id = _owner(conn, item["owner"])
+    for collaborator in item.get("shared_with", []):
+        collaborator_id = _owner(conn, collaborator)
+        if collaborator_id != owner_id:
+            conn.execute(
+                "INSERT INTO document_collaborators (document_id,user_id,access,added_by,added_at) VALUES (?,?,'reviewer',?,?)",
+                (document_id, collaborator_id, owner_id, now),
+            )
     for chunk in result.chunks:
         chunk_id = uuid.uuid4().hex
         conn.execute(
@@ -189,12 +199,28 @@ def _seed_dependencies(conn: sqlite3.Connection, seeded: list[tuple[str, dict[st
     return created
 
 
+def _embed_environment(conn: sqlite3.Connection) -> tuple[int, dict[str, int]]:
+    chunks = conn.execute("SELECT id,content FROM document_chunks ORDER BY id").fetchall()
+    requirements = conn.execute("SELECT id,requirement_text FROM regulatory_requirements ORDER BY id").fetchall()
+    texts = [row["content"] for row in chunks] + [row["requirement_text"] for row in requirements]
+    try:
+        vectors, usage = openai.embed(texts)
+    except openai.ExternalServiceError as exc:
+        raise ApiError(502, "embedding_failed", str(exc)) from exc
+    for row, vector in zip(chunks, vectors[:len(chunks)], strict=True):
+        conn.execute("INSERT INTO vec_chunks (chunk_id,embedding) VALUES (?,?)", (row["id"], sqlite_vec.serialize_float32(vector)))
+    for row, vector in zip(requirements, vectors[len(chunks):], strict=True):
+        conn.execute("INSERT INTO vec_requirements (requirement_id,embedding) VALUES (?,?)", (row["id"], sqlite_vec.serialize_float32(vector)))
+    return len(vectors), usage.as_dict()
+
+
 def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str, Any]:
     scenarios = _scenarios()
     item = scenarios.get(scenario_id)
     if item is None:
         raise ApiError(422, "validation_error", "Unknown sample scenario.")
     scenario_root, _ = _scenario_files(item)
+    openai.require_configured()
     reset(conn)
     primary = item["primary"]
     amendment = item["amendment"]
@@ -203,8 +229,21 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
     for document in item["documents"]:
         _load_document(conn, scenario_root / document["file"], document)
     seeded, changes = _seed_requirements(conn, primary_id, amendment_id, item["requirements"])
+    embedding_count, embedding_usage = _embed_environment(conn)
     dependency_count = _seed_dependencies(conn, seeded)
     impact_count = sum(impact.analyse_change(conn, change_id) for change_id in changes)
+    expected_embeddings = conn.execute("SELECT (SELECT COUNT(*) FROM document_chunks) + (SELECT COUNT(*) FROM regulatory_requirements) AS n").fetchone()["n"]
+    checks = {
+        "documents": conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"] == len(item["documents"]),
+        "regulations": conn.execute("SELECT COUNT(*) AS n FROM regulations").fetchone()["n"] == 2,
+        "requirements": conn.execute("SELECT COUNT(*) AS n FROM regulatory_requirements WHERE is_current=1").fetchone()["n"] == len(item["requirements"]),
+        "dependencies": conn.execute("SELECT COUNT(DISTINCT lineage_id) AS n FROM dependencies").fetchone()["n"] == len(item["requirements"]),
+        "impacts": impact_count >= len(changes),
+        "embeddings": embedding_count == expected_embeddings,
+    }
+    if not all(checks.values()):
+        failed = ", ".join(name for name, passed in checks.items() if not passed)
+        raise ApiError(500, "sample_verification_failed", f"Scenario verification failed: {failed}.")
     conn.commit()
     return {
         "scenario_id": scenario_id,
@@ -214,4 +253,6 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
         "requirements": len(item["requirements"]),
         "dependencies": dependency_count,
         "impacts": impact_count,
+        "embeddings": embedding_count,
+        "embedding_usage": embedding_usage,
     }
