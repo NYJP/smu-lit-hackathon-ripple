@@ -24,3 +24,6 @@ Thumbs.db
 ## Editors
 .vscode/
 .idea/
+
+## Local implementation-workflow artifacts
+.superpowers/
