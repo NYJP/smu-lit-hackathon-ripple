@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowUpRight, FileText, LoaderCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Download, FileText, LoaderCircle, Scale } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { api, ApiRequestError } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { api, apiUrl, ApiRequestError } from "@/lib/api";
 
 type Requirement = {
   requirement_text: string;
@@ -14,6 +15,7 @@ type Requirement = {
   subject: string;
   value: string | null;
   source_section: string | null;
+  source_page: number | null;
 };
 
 type Dependency = {
@@ -35,6 +37,7 @@ type RequirementDetail = {
   lineage: { id: string; public_ref: string };
   current_version: Requirement;
   dependencies: Dependency[];
+  regulation: { id: string; title: string } | null;
 };
 
 function documentHref(dependency: Dependency) {
@@ -58,6 +61,8 @@ export function RequirementDetailPage() {
   if (error) return <div className="mx-auto max-w-6xl px-5 py-8"><p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p></div>;
   if (!data) return <div className="mx-auto max-w-6xl px-5 py-16 text-center text-muted-foreground"><LoaderCircle className="mx-auto animate-spin" /></div>;
 
+  const regulationFileUrl = data.regulation ? apiUrl(`/files/regulations/${data.regulation.id}`) : null;
+
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8">
       <Link href="/requirements" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Requirements</Link>
@@ -66,6 +71,11 @@ export function RequirementDetailPage() {
         <h1 className="mt-3 max-w-4xl text-2xl font-semibold tracking-tight">{data.current_version.requirement_text}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{data.current_version.source_section ?? "Source section unavailable"}{data.current_version.value ? ` · ${data.current_version.value}` : ""}</p>
       </div>
+
+      {data.regulation && regulationFileUrl ? <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-muted-foreground">Original regulation</p><Link href={`/regulations/${data.regulation.id}`} className="mt-1 inline-flex items-center gap-2 font-medium hover:underline"><Scale className="size-4" />{data.regulation.title}</Link></div><Button asChild variant="outline"><a href={regulationFileUrl}><Download />Download original</a></Button></div>
+        <div className="mt-3 overflow-hidden rounded-lg border"><iframe title={data.regulation.title} src={`${regulationFileUrl}?inline=true${data.current_version.source_page ? `#page=${data.current_version.source_page}` : ""}`} className="h-[65vh] w-full bg-muted/20" /></div>
+      </section> : null}
 
       <section className="mt-8">
         <div className="flex items-center justify-between"><h2 className="font-medium">Linked documents</h2><span className="text-sm text-muted-foreground">{data.dependencies.length} dependencies</span></div>

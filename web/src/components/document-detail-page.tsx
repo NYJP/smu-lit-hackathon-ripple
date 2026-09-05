@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, Download, LoaderCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpen, Download, LoaderCircle } from "lucide-react";
 import { api, apiUrl, ApiRequestError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,12 +50,35 @@ function highlighted(content: string, ranges: HighlightRange[]) {
   return <>{rendered}</>;
 }
 
+function policySources(content: string, dependencies: Dependency[]) {
+  const sources = dependencies
+    .filter((dependency): dependency is Dependency & { evidence_start: number; evidence_end: number } => dependency.evidence_start !== null && dependency.evidence_end !== null && dependency.evidence_start >= 0 && dependency.evidence_end > dependency.evidence_start && dependency.evidence_end <= content.length)
+    .sort((left, right) => left.evidence_start - right.evidence_start);
+  if (!sources.length) return content;
+  const rendered = [];
+  let cursor = 0;
+  for (const source of sources) {
+    if (source.evidence_start < cursor) continue;
+    if (source.evidence_start > cursor) rendered.push(content.slice(cursor, source.evidence_start));
+    rendered.push(<span key={`${source.lineage_id}-${source.evidence_start}`} className="group/source relative inline">
+      <Link href={`/requirements/${source.lineage_id}`} className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <mark className="cursor-pointer rounded-sm bg-sky-200 px-0.5 text-foreground underline decoration-sky-600 decoration-dotted underline-offset-2 dark:bg-sky-500/35">{content.slice(source.evidence_start, source.evidence_end)}</mark>
+        <span role="tooltip" className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-md bg-popover p-3 text-left text-xs text-popover-foreground shadow-lg ring-1 ring-foreground/10 group-hover/source:block group-focus-within/source:block"><span className="block font-medium">{source.public_ref}</span><span className="mt-1 block capitalize text-muted-foreground">{source.relationship_type} dependency · {Math.round(source.confidence * 100)}% confidence</span><span className="mt-2 block text-primary">Click to open requirement</span></span>
+      </Link>
+    </span>);
+    cursor = source.evidence_end;
+  }
+  if (cursor < content.length) rendered.push(content.slice(cursor));
+  return <>{rendered}</>;
+}
+
 export function DocumentDetailPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<DocumentDetail | null>(null);
   const [impacts, setImpacts] = useState<Impact[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus | null>(focusFromLocation);
+  const [showSources, setShowSources] = useState(false);
   useEffect(() => {
     Promise.all([
       api.get<DocumentDetail>(`/documents/${params.id}`),
@@ -78,6 +101,7 @@ export function DocumentDetailPage() {
   const rangesFor = (chunkId: string) => focus?.chunkId === chunkId
     ? [{ start: focus.start, end: focus.end }]
     : impacts.filter((impact) => impact.document_chunk_id === chunkId).map((impact) => ({ start: impact.conflicting_start, end: impact.conflicting_end }));
+  const renderChunk = (chunk: Chunk) => showSources ? policySources(chunk.content, chunk.dependencies) : highlighted(chunk.content, rangesFor(chunk.id));
   return <div className="mx-auto w-full max-w-6xl px-5 py-8">
     <Link href="/documents" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Documents</Link>
     <div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm text-muted-foreground">{data.document.doc_type.replaceAll("_", " ")} · {data.document.owner.display_name}</p><h1 className="text-2xl font-semibold tracking-tight">{data.document.name}</h1></div><Button asChild variant="outline"><a href={fileUrl}><Download />Download original</a></Button></div>
@@ -90,8 +114,8 @@ export function DocumentDetailPage() {
         </button>) : <p className="p-6 text-center text-sm text-muted-foreground">No open issues were found in this document.</p>}
       </div>
     </section>
-    <div className="mt-7 overflow-hidden rounded-lg border">{isPdf ? <iframe title={data.document.name} src={`${fileUrl}?inline=true${pdfPage}`} className="h-[70vh] w-full bg-muted/20" /> : <div className="max-h-[70vh] overflow-y-auto bg-muted/10 p-8"><div className="mx-auto max-w-3xl rounded-md bg-background p-8 shadow-sm">{data.chunks.map(chunk => <div key={`preview-${chunk.id}`} className="mb-5 last:mb-0">{chunk.chunk_type === "heading" ? <h2 className="font-serif text-lg font-semibold">{highlighted(chunk.content, rangesFor(chunk.id))}</h2> : <p className="whitespace-pre-wrap font-serif text-sm leading-7">{highlighted(chunk.content, rangesFor(chunk.id))}</p>}</div>)}</div></div>}</div>
+    <div className="mt-7 overflow-hidden rounded-lg border">{isPdf ? <iframe title={data.document.name} src={`${fileUrl}?inline=true${pdfPage}`} className="h-[70vh] w-full bg-muted/20" /> : <div className="max-h-[70vh] overflow-y-auto bg-muted/10 p-8"><div className="mx-auto max-w-3xl rounded-md bg-background p-8 shadow-sm">{data.chunks.map(chunk => <div key={`preview-${chunk.id}`} className="mb-5 last:mb-0">{chunk.chunk_type === "heading" ? <h2 className="font-serif text-lg font-semibold">{renderChunk(chunk)}</h2> : <p className="whitespace-pre-wrap font-serif text-sm leading-7">{renderChunk(chunk)}</p>}</div>)}</div></div>}</div>
     {focusedChunk ? <div className="mt-4 rounded-lg border border-yellow-300 bg-yellow-50 p-4 text-sm leading-6 dark:border-yellow-700 dark:bg-yellow-950/30"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Affected passage{focusedChunk.page_number ? ` · page ${focusedChunk.page_number}` : ""}</p><p className="whitespace-pre-wrap">{highlighted(focusedChunk.content, [{ start: focus?.start ?? null, end: focus?.end ?? null }])}</p></div> : null}
-    <section className="mt-8"><div className="flex items-center justify-between"><h2 className="font-medium">Document text</h2><span className="text-sm text-muted-foreground">Affected text is highlighted</span></div><div className="mt-3 divide-y rounded-lg border">{data.chunks.map(chunk => { const chunkImpacts = impacts.filter((impact) => impact.document_chunk_id === chunk.id); return <article id={`chunk-${chunk.id}`} key={chunk.id} className={chunkImpacts.length || focus?.chunkId === chunk.id ? "bg-yellow-50/70 p-4 ring-1 ring-inset ring-yellow-300 dark:bg-yellow-950/20 dark:ring-yellow-700" : "p-4"}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant="outline">{chunk.chunk_type}</Badge>{chunk.section_path ? <span>{chunk.section_path}</span> : null}{chunk.page_number ? <span>page {chunk.page_number}</span> : null}{chunkImpacts.length ? <Badge variant="destructive">{chunkImpacts.length} {chunkImpacts.length === 1 ? "issue" : "issues"}</Badge> : null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{highlighted(chunk.content, rangesFor(chunk.id))}</p>{chunkImpacts.map((impact) => <div key={impact.id} className="mt-3 rounded-md border border-destructive/20 bg-destructive/5 p-3"><p className="text-sm font-medium text-destructive">{impact.change_summary}</p><p className="mt-1 text-sm leading-5">{impact.reason}</p></div>)}{chunk.dependencies.length ? <div className="mt-3 flex flex-wrap gap-2">{chunk.dependencies.map(dep => <Badge key={dep.lineage_id} variant="secondary">{dep.public_ref} · {dep.relationship_type}</Badge>)}</div> : null}</article>; })}</div></section>
+    <section className="mt-8"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-medium">Document text</h2><span className="text-sm text-muted-foreground">{showSources ? "Policy-linked clauses are highlighted in blue" : "Affected text is highlighted in yellow"}</span></div><Button type="button" variant={showSources ? "secondary" : "outline"} aria-pressed={showSources} onClick={() => setShowSources((current) => !current)}><BookOpen />{showSources ? "Hide policy sources" : "Show policy sources"}</Button></div><div className="mt-3 divide-y rounded-lg border">{data.chunks.map(chunk => { const chunkImpacts = impacts.filter((impact) => impact.document_chunk_id === chunk.id); return <article id={`chunk-${chunk.id}`} key={chunk.id} className={chunkImpacts.length || focus?.chunkId === chunk.id ? "bg-yellow-50/70 p-4 ring-1 ring-inset ring-yellow-300 dark:bg-yellow-950/20 dark:ring-yellow-700" : "p-4"}><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><Badge variant="outline">{chunk.chunk_type}</Badge>{chunk.section_path ? <span>{chunk.section_path}</span> : null}{chunk.page_number ? <span>page {chunk.page_number}</span> : null}{chunkImpacts.length ? <Badge variant="destructive">{chunkImpacts.length} {chunkImpacts.length === 1 ? "issue" : "issues"}</Badge> : null}</div><p className="mt-3 whitespace-pre-wrap text-sm leading-6">{renderChunk(chunk)}</p>{chunkImpacts.map((impact) => <div key={impact.id} className="mt-3 rounded-md border border-destructive/20 bg-destructive/5 p-3"><p className="text-sm font-medium text-destructive">{impact.change_summary}</p><p className="mt-1 text-sm leading-5">{impact.reason}</p></div>)}{chunk.dependencies.length ? <div className="mt-3 flex flex-wrap gap-2">{chunk.dependencies.map(dep => <Badge key={dep.lineage_id} variant="secondary">{dep.public_ref} · {dep.relationship_type}</Badge>)}</div> : null}</article>; })}</div></section>
   </div>;
 }

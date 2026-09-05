@@ -94,7 +94,17 @@ def get_requirement(
         ).fetchall()
         dependencies = [dict(row) for row in rows]
     current = next((row for row in versions if row["id"] == lineage["current_version_id"]), None)
-    return {"lineage": dict(lineage), "current_version": dict(current) if current else None, "versions": [dict(row) for row in versions], "dependencies": dependencies}
+    regulation_id = current["regulation_id"] if current else lineage["origin_regulation_id"]
+    regulation = conn.execute(
+        "SELECT * FROM regulations WHERE id = ?", (regulation_id,)
+    ).fetchone()
+    return {
+        "lineage": dict(lineage),
+        "current_version": dict(current) if current else None,
+        "versions": [dict(row) for row in versions],
+        "dependencies": dependencies,
+        "regulation": dict(regulation) if regulation else None,
+    }
 
 
 @router.patch("/{lineage_id}")
