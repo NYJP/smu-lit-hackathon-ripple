@@ -166,8 +166,8 @@ On boot the API MUST: create `./data/` if absent, run migrations, load `sqlite-v
 OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1     # override for a local/proxy endpoint
 RIPPLE_EMBEDDING_MODEL=text-embedding-3-small # 1536 dims
-RIPPLE_REASONING_MODEL=gpt-4.1                # extraction, impact, recommendations
-RIPPLE_BULK_MODEL=gpt-4.1-mini                # dependency adjudication (high volume)
+RIPPLE_REASONING_MODEL=gpt-5                  # extraction, impact, recommendations
+RIPPLE_BULK_MODEL=gpt-5                       # dependency adjudication (high volume)
 RIPPLE_DATA_DIR=./data
 RIPPLE_MAX_CONCURRENT_LLM_CALLS=5
 RIPPLE_API_PORT=8000                          # dev machines collide; see below
@@ -626,7 +626,7 @@ Output schema:
       "subject": "cannabis_possession",
       "value": "15 g",
       "value_numeric": 15,
-      "value_unit": "g",
+      "value_unit": "g",                    // closed enum — see below
       "comparator": "gt",
       "condition": null,
       "exception": "Licensed medical suppliers under Section 14.",
@@ -638,6 +638,8 @@ Output schema:
   ]
 }
 ```
+
+`value_unit` MUST be constrained in the JSON schema to the closed enum `["g","kg","mg","days","months","years","sgd","usd","percent","count","other"]`, and the extractor MUST convert into it (15 grammes → `15`/`g`). This is not tidiness: §8.2 compares units for equality when deciding whether a threshold changed, and gpt-5 cannot be run at `temperature = 0` (§11), so free-text units vary between runs and would report a spurious change on every re-extraction. Canonicalise again in code after the call, so a model that ignores the enum still lands on one spelling.
 
 `subject` MUST be snake_case and stable in meaning — it is the primary key for change matching. The existing `(public_ref, subject, requirement_text)` list is passed into the prompt as reference context so the model reuses subjects rather than inventing synonyms.
 
@@ -1162,7 +1164,13 @@ This is the artefact a lawyer forwards to a colleague or attaches to a consultat
 
 - **Single provider.** OpenAI only: embeddings via `RIPPLE_EMBEDDING_MODEL`, generation via `RIPPLE_REASONING_MODEL` and `RIPPLE_BULK_MODEL`, all through the official `openai` Python SDK and one `OPENAI_API_KEY`. No second vendor, no local model runtime, no fallback provider.
 - **Structured outputs everywhere.** Every generation call uses `strict: true` JSON schema. A schema-validation failure retries once, then fails that batch with the raw response recorded in the job result.
-- **Determinism where it matters.** Extraction, adjudication, and impact calls use `temperature = 0`. The literal-value override in section 8.3 is code, not a prompt instruction.
+- **Reasoning tokens are the real cost driver.** Measured on gpt-5: extracting one short clause billed 371 completion tokens, of which **320 were reasoning** — the visible JSON was about 50. Budget on that ratio rather than on output length, and treat §7.6's adjudication as the expensive path, since it is the highest-volume call in the system. `RIPPLE_BULK_MODEL` exists as a separate variable precisely so adjudication can be downgraded without touching extraction or impact judgement.
+- **The gpt-5 call shape.** Verified against the live API, not assumed: `max_tokens` is **rejected** — use `max_completion_tokens`, and size it generously because reasoning tokens are billed as completion tokens and consume the budget before any visible output is produced. `temperature` accepts **only its default of 1**; `0` and `0.2` are both rejected with a 400.
+- **Determinism does not come from sampling — it cannot.** Since `temperature = 0` is unavailable, identical input can produce different output, and it does: the same clause extracted twice yielded `value_unit` of `"grams"` once and `"g"` the next. Determinism must therefore be engineered, in three places:
+  1. **Structured outputs with `strict: true`** on every call, constraining shape absolutely.
+  2. **Closed enums, not free text, for any field later compared for equality.** `value_unit` MUST be one of a fixed set (`g`, `kg`, `mg`, `days`, `months`, `years`, `sgd`, `usd`, `percent`, `count`, `other`) and `subject` MUST be reused from the supplied reference list where one applies. §8.2's diff table compares units for equality — free-text units silently break that comparison and would report a spurious change on every re-extraction.
+  3. **Post-hoc canonicalisation in code**, applied to every extracted value before storage, so a model that ignores the enum still lands on one spelling.
+- The literal-value override in §8.3 remains code, not a prompt instruction — and it matters more now, not less, because it is the one part of impact classification that no sampling variance can reach.
 - **Idempotency.** Re-running any job MUST NOT duplicate rows. `dependencies` is unique on `(lineage_id, document_chunk_id)`; `impacts` on `(regulatory_change_id, dependency_id)`. Use upserts.
 - **Traceability.** Every stored AI output keeps its rationale and evidence span. The lawyer must always be able to see why Ripple said something.
 - **Throughput target.** 50 internal documents averaging 20 pages plus one 60-page regulation complete initial mapping within 30 minutes on a laptop. Impact analysis for one change across 200 dependencies completes within 5 minutes.
