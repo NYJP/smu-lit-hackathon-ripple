@@ -5,12 +5,9 @@ import { Database, LoaderCircle, RotateCcw } from "lucide-react";
 import { api, ApiRequestError } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export function SettingsPageContent() {
   const { user } = useSession();
-  const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState<"reset" | "sample" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +16,7 @@ export function SettingsPageContent() {
   async function run(action: "reset" | "sample") {
     setBusy(action); setError(null);
     try {
-      await api.post(action === "reset" ? "/settings/reset" : "/settings/sample-environment", { confirmation });
+      await api.post(action === "reset" ? "/settings/reset" : "/settings/sample-environment");
       window.location.href = "/who";
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Could not update the environment.");
@@ -27,12 +24,11 @@ export function SettingsPageContent() {
     }
   }
 
-  const confirmed = confirmation === "RESET";
   return <div className="mx-auto w-full max-w-6xl px-5 py-8">
     <div><p className="text-sm text-muted-foreground">Local environment</p><h1 className="text-2xl font-semibold tracking-tight">Settings</h1></div>
     <div className="mt-7 max-w-3xl space-y-5">
-      <section className="rounded-lg border p-5"><div className="flex gap-3"><RotateCcw className="mt-0.5 size-5 text-destructive" /><div><h2 className="font-medium">Reset environment</h2><p className="mt-1 text-sm text-muted-foreground">Remove all regulations, internal documents, analysis results, uploads, and sessions. The database schema and three default accounts are recreated.</p></div></div><div className="mt-5 max-w-sm space-y-2"><Label htmlFor="reset-confirmation">Type RESET to confirm</Label><Input id="reset-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" /></div>{error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}<div className="mt-4 flex flex-wrap gap-2"><Button variant="destructive" disabled={!confirmed || busy !== null} onClick={() => void run("reset")}>{busy === "reset" ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}Reset environment</Button></div></section>
-      <section className="rounded-lg border p-5"><div className="flex gap-3"><Database className="mt-0.5 size-5" /><div><h2 className="font-medium">Load sample environment</h2><p className="mt-1 text-sm text-muted-foreground">Start clean, then load the bundled regulation PDFs and internal PDF, DOCX, and TXT documents into their matching collections.</p></div></div><Button className="mt-5" disabled={!confirmed || busy !== null} onClick={() => void run("sample")}>{busy === "sample" ? <LoaderCircle className="animate-spin" /> : <Database />}Load sample environment</Button></section>
+      <section className="rounded-lg border p-5"><div className="flex gap-3"><RotateCcw className="mt-0.5 size-5 text-destructive" /><div><h2 className="font-medium">Reset environment</h2><p className="mt-1 text-sm text-muted-foreground">Remove all regulations, internal documents, analysis results, uploads, and sessions. The database schema and three default accounts are recreated.</p></div></div>{error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}<div className="mt-4 flex flex-wrap gap-2"><Button variant="destructive" disabled={busy !== null} onClick={() => void run("reset")}>{busy === "reset" ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}Reset environment</Button></div></section>
+      <section className="rounded-lg border p-5"><div className="flex gap-3"><Database className="mt-0.5 size-5" /><div><h2 className="font-medium">Load sample environment</h2><p className="mt-1 text-sm text-muted-foreground">Start clean, then load the bundled regulation PDFs and internal PDF, DOCX, and TXT documents into their matching collections.</p></div></div><Button className="mt-5" disabled={busy !== null} onClick={() => void run("sample")}>{busy === "sample" ? <LoaderCircle className="animate-spin" /> : <Database />}Load sample environment</Button></section>
     </div>
   </div>;
 }

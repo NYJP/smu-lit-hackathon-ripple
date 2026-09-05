@@ -215,7 +215,7 @@ def cmd_dev(args: argparse.Namespace) -> None:
 
     announce(f"Starting the API on http://127.0.0.1:{api_port} ...")
     api_proc = subprocess.Popen(
-        [str(py), "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", api_port],
+        [str(py), "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", api_port, "--reload"],
         cwd=str(ROOT),
         env=env,
     )
