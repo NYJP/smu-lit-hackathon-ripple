@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, FileText, GitBranch } from "lucide-react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DependencyGraph } from "@/components/dependency-graph";
 
 type Dashboard = { impact_counts: Record<string, number>; documents_visible: number; recent_changes: Change[] };
 type Change = { id: string; summary: string; change_type: string; analysis_status: string; created_at: string; impact_count?: number };
@@ -30,17 +30,5 @@ export function ChangesView() {
 }
 
 export function GraphView() {
-  type Node = { id: string; label: string; kind: string; state: string };
-  type Edge = { id: string; source: string; target: string; relationship_type: string; confidence: number; lineage_id: string; document_id: string; document_chunk_id: string; evidence_start: number | null; evidence_end: number | null };
-  const [data, setData] = useState<{ nodes: Node[]; edges: Edge[] } | null>(null);
-  useEffect(() => { api.get<{ nodes: Node[]; edges: Edge[] }>("/graph").then(setData).catch(() => setData({ nodes: [], edges: [] })); }, []);
-  if (!data) return <Loading />;
-  const nodes = new Map(data.nodes.map((node) => [node.id, node]));
-  const documentHref = (edge: Edge) => {
-    const query = new URLSearchParams({ chunk: edge.document_chunk_id });
-    if (edge.evidence_start !== null) query.set("start", String(edge.evidence_start));
-    if (edge.evidence_end !== null) query.set("end", String(edge.evidence_end));
-    return `/documents/${edge.document_id}?${query.toString()}`;
-  };
-  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Relationship map</p><h1 className="text-2xl font-semibold tracking-tight">Dependency graph</h1></div><div className="mt-7 overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Requirement</TableHead><TableHead>Linked document</TableHead><TableHead>Relationship</TableHead><TableHead className="text-right">Confidence</TableHead></TableRow></TableHeader><TableBody>{data.edges.length ? data.edges.map(edge => <TableRow key={edge.id}><TableCell className="font-medium"><Link className="hover:underline" href={`/requirements/${edge.lineage_id}`}>{nodes.get(edge.source)?.label ?? "Requirement"}</Link></TableCell><TableCell><Link className="font-medium hover:underline" href={documentHref(edge)}>{nodes.get(edge.target)?.label ?? nodes.get(`doc:${edge.document_id}`)?.label ?? "Document"}</Link></TableCell><TableCell className="capitalize"><Badge variant="outline">{edge.relationship_type}</Badge></TableCell><TableCell className="text-right tabular-nums">{Math.round(edge.confidence * 100)}%</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="py-12 text-center text-muted-foreground">No visible dependencies yet.</TableCell></TableRow>}</TableBody></Table></div><p className="mt-3 text-xs text-muted-foreground">{data.nodes.length} nodes · {data.edges.length} links</p></div>;
+  return <DependencyGraph />;
 }

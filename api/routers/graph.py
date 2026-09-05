@@ -24,23 +24,42 @@ def get_graph(change_id: str | None = None, regulation_id: str | None = None, do
     if document_id: where.append("d.document_id=?"); values.append(document_id)
     if owner_id: where.append("doc.owner_id=?"); values.append(owner_id)
     if regulation_id: where.append("q.regulation_id=?"); values.append(regulation_id)
-    rows = conn.execute("SELECT d.*, l.public_ref, q.requirement_text, q.subject, doc.name, doc.doc_type, doc.owner_id, u.display_name AS owner_name, c.section_path, c.page_number FROM dependencies d JOIN requirement_lineages l ON l.id=d.lineage_id JOIN regulatory_requirements q ON q.id=l.current_version_id JOIN documents doc ON doc.id=d.document_id JOIN users u ON u.id=doc.owner_id JOIN document_chunks c ON c.id=d.document_chunk_id WHERE " + " AND ".join(where), values).fetchall()
-    impacted: dict[str, str] = {}
-    if change_id:
-        for row in conn.execute("SELECT document_id, impact_level FROM impacts WHERE regulatory_change_id=?", (change_id,)).fetchall():
-            impacted[row["document_id"]] = row["impact_level"]
+    rows = conn.execute("SELECT d.*, l.public_ref, q.requirement_text, q.subject, r.title AS regulation_title, doc.name, doc.doc_type, doc.owner_id, u.display_name AS owner_name, c.section_path, c.page_number FROM dependencies d JOIN requirement_lineages l ON l.id=d.lineage_id JOIN regulatory_requirements q ON q.id=l.current_version_id JOIN regulations r ON r.id=q.regulation_id JOIN documents doc ON doc.id=d.document_id JOIN users u ON u.id=doc.owner_id JOIN document_chunks c ON c.id=d.document_chunk_id WHERE " + " AND ".join(where), values).fetchall()
+    impact_filter = "i.regulatory_change_id = ?" if change_id else "i.review_status IN ('open', 'in_review')"
+    impact_values: list[object] = [change_id] if change_id else []
+    impact_rows = conn.execute(
+        f"""SELECT i.*, rc.lineage_id, rc.summary AS change_summary
+              FROM impacts i JOIN regulatory_changes rc ON rc.id=i.regulatory_change_id
+             WHERE {impact_filter} AND i.document_id IN ({','.join('?' * len(visible)) if visible else 'NULL'})""",
+        [*impact_values, *visible],
+    ).fetchall()
+    rank = {"none": 0, "low": 1, "medium": 2, "high": 3}
+    impacts_by_dependency: dict[str, sqlite3.Row] = {}
+    lineage_levels: dict[str, str] = {}
+    document_levels: dict[str, str] = {}
+    for impact_row in impact_rows:
+        existing = impacts_by_dependency.get(impact_row["dependency_id"])
+        if existing is None or rank[impact_row["impact_level"]] > rank[existing["impact_level"]]:
+            impacts_by_dependency[impact_row["dependency_id"]] = impact_row
+        if rank[impact_row["impact_level"]] > rank.get(lineage_levels.get(impact_row["lineage_id"], "none"), 0):
+            lineage_levels[impact_row["lineage_id"]] = impact_row["impact_level"]
+        if rank[impact_row["impact_level"]] > rank.get(document_levels.get(impact_row["document_id"], "none"), 0):
+            document_levels[impact_row["document_id"]] = impact_row["impact_level"]
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     for row in rows:
         req_id = f"req:{row['lineage_id']}"
-        nodes.setdefault(req_id, {"id": req_id, "kind": "requirement", "label": f"{row['public_ref']} · {row['subject'].replace('_', ' ')}", "state": "changed" if change_id else "current"})
+        requirement_level = lineage_levels.get(row["lineage_id"])
+        nodes.setdefault(req_id, {"id": req_id, "kind": "requirement", "label": f"{row['public_ref']} · {row['subject'].replace('_', ' ')}", "requirement_text": row["requirement_text"], "regulation_title": row["regulation_title"], "state": f"affected_{requirement_level}" if requirement_level else "current", "impact_level": requirement_level})
         doc_id = f"doc:{row['document_id']}"
-        state = f"affected_{impacted[row['document_id']]}" if row["document_id"] in impacted else "dependent_unaffected"
-        nodes.setdefault(doc_id, {"id": doc_id, "kind": "document", "label": row["name"], "doc_type": row["doc_type"], "owner": row["owner_name"], "state": state})
+        document_level = document_levels.get(row["document_id"])
+        state = f"affected_{document_level}" if document_level else "dependent_unaffected"
+        nodes.setdefault(doc_id, {"id": doc_id, "kind": "document", "label": row["name"], "doc_type": row["doc_type"], "owner": row["owner_name"], "state": state, "impact_level": document_level})
         target = doc_id
         if level == "section":
             target = f"sec:{row['document_chunk_id']}"
             nodes.setdefault(target, {"id": target, "kind": "section", "parent": doc_id, "label": row["section_path"] or row["name"], "page": row["page_number"], "state": state})
+        edge_impact = impacts_by_dependency.get(row["id"])
         edges.append({
             "id": row["id"],
             "source": req_id,
@@ -53,5 +72,10 @@ def get_graph(change_id: str | None = None, regulation_id: str | None = None, do
             "evidence_start": row["evidence_start"],
             "evidence_end": row["evidence_end"],
             "page_number": row["page_number"],
+            "impact_level": edge_impact["impact_level"] if edge_impact else None,
+            "impact_reason": edge_impact["reason"] if edge_impact else None,
+            "change_summary": edge_impact["change_summary"] if edge_impact else None,
+            "affected_start": edge_impact["conflicting_start"] if edge_impact else None,
+            "affected_end": edge_impact["conflicting_end"] if edge_impact else None,
         })
     return {"nodes": list(nodes.values()), "edges": edges, "hidden_document_count": 0}
