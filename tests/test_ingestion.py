@@ -5,6 +5,7 @@ from __future__ import annotations
 import fitz
 from docx import Document as DocxDocument
 
+from api.services import parsing, storage
 from tests.conftest import login_as
 
 
@@ -75,6 +76,61 @@ def test_document_docx_ingestion_writes_chunks_fts_and_scopes_collaborator(clien
     streamed = client.get(f"/api/v1/files/documents/{item['document_id']}")
     assert streamed.status_code == 200
     assert streamed.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+def test_document_pdf_heading_page_and_offsets_are_source_faithful(client, conn, users):
+    """A PDF heading immediately followed by body text is a real section boundary."""
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Part I Retention")
+    page.insert_text((72, 88), "Customer records are retained for seven years.")
+    page.insert_text((72, 104), "They are kept in the archive for audit and retrieval purposes.")
+    pdf_payload = pdf.tobytes()
+    pdf.close()
+    login_as(client, users["Alex Tan"]["id"])
+    response = client.post(
+        "/api/v1/documents",
+        data={"doc_type": "policy"},
+        files=[("files[]", ("retention.pdf", pdf_payload, "application/pdf"))],
+    )
+    assert response.status_code == 202, response.text
+    document_id = response.json()["documents"][0]["document_id"]
+    job = client.get(f"/api/v1/jobs/{response.json()['documents'][0]['job_id']}").json()
+    assert job["status"] == "succeeded", job
+    chunks = conn.execute(
+        "SELECT content, section_path, page_number, char_start, char_end, chunk_type "
+        "FROM document_chunks WHERE document_id = ? ORDER BY ordinal",
+        (document_id,),
+    ).fetchall()
+    assert [chunk["chunk_type"] for chunk in chunks] == ["heading", "paragraph"]
+    assert chunks[1]["section_path"] == "Part I Retention"
+    assert chunks[0]["page_number"] == chunks[1]["page_number"] == 1
+
+    stored = conn.execute("SELECT file_path FROM documents WHERE id = ?", (document_id,)).fetchone()
+    original_extracted_text = "\n".join(parsing._extract_raw_pages(storage.absolute_path(stored["file_path"])))
+    for chunk in chunks:
+        assert original_extracted_text[chunk["char_start"]:chunk["char_end"]] == chunk["content"]
+
+
+def test_document_txt_ingestion_preserves_section_and_original_offsets(client, conn, users):
+    source_text = "Part II Access\n\nAccess logs are retained for seven years."
+    login_as(client, users["Alex Tan"]["id"])
+    response = client.post(
+        "/api/v1/documents",
+        data={"doc_type": "policy"},
+        files=[("files[]", ("access.txt", source_text.encode(), "text/plain"))],
+    )
+    assert response.status_code == 202, response.text
+    document_id = response.json()["documents"][0]["document_id"]
+    chunks = conn.execute(
+        "SELECT content, section_path, char_start, char_end, chunk_type "
+        "FROM document_chunks WHERE document_id = ? ORDER BY ordinal",
+        (document_id,),
+    ).fetchall()
+    assert [chunk["chunk_type"] for chunk in chunks] == ["heading", "paragraph"]
+    assert chunks[1]["section_path"] == "Part II Access"
+    for chunk in chunks:
+        assert source_text[chunk["char_start"]:chunk["char_end"]] == chunk["content"]
 
 
 def test_scanned_pdf_fails_with_the_required_ocr_message(client, conn, users):
