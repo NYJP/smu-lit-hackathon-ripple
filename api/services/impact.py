@@ -268,6 +268,7 @@ def _write_impact(
     change_id: str,
     row: sqlite3.Row,
     result: dict[str, Any],
+    scan_id: str | None = None,
 ) -> bool:
     span, start, end = _locate_evidence(row["content"], result.get("evidence_quote"))
     existing = conn.execute(
@@ -279,17 +280,18 @@ def _write_impact(
         """INSERT INTO impacts
            (id, regulatory_change_id, dependency_id, document_id, document_chunk_id,
             impact_level, confidence, reason, conflicting_span, conflicting_start,
-            conflicting_end, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            conflicting_end, created_by_scan_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(regulatory_change_id, dependency_id) DO UPDATE SET
              impact_level=excluded.impact_level, confidence=excluded.confidence,
              reason=excluded.reason, conflicting_span=excluded.conflicting_span,
              conflicting_start=excluded.conflicting_start,
-             conflicting_end=excluded.conflicting_end""",
+             conflicting_end=excluded.conflicting_end,
+             created_by_scan_id=COALESCE(impacts.created_by_scan_id, excluded.created_by_scan_id)""",
         (
             impact_id, change_id, row["dependency_id"], row["document_id"],
             row["document_chunk_id"], result["level"], float(result["confidence"]),
-            str(result["reason"]), span, start, end, _now(),
+            str(result["reason"]), span, start, end, scan_id, _now(),
         ),
     )
     return existing is None
@@ -328,6 +330,7 @@ def analyse_change(
     change_id: str,
     *,
     dependency_ids: set[str] | None = None,
+    scan_id: str | None = None,
 ) -> ImpactAnalysisResult:
     """Evaluate active dependencies without committing the caller's transaction."""
     change = conn.execute("SELECT * FROM regulatory_changes WHERE id = ?", (change_id,)).fetchone()
@@ -412,7 +415,7 @@ def analyse_change(
         row = by_id[dependency_id]
         if not was_cached:
             _write_cache(conn, row, *hashes, selected_model, result, call_usage)
-        created += int(_write_impact(conn, change_id, row, result))
+        created += int(_write_impact(conn, change_id, row, result, scan_id))
         counts[result["level"]] += 1
 
     if dependency_ids is None:

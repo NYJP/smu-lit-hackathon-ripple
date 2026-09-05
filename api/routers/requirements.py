@@ -12,15 +12,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 
 from api import access
 from api.access import require_admin
 from api.auth import get_current_user
-from api.db import get_db
+from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import impact
+from api.services import impact, jobs, scanning
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
 
@@ -98,7 +98,13 @@ def get_requirement(
 
 
 @router.patch("/{lineage_id}")
-def patch_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.Connection = Depends(get_db), _admin: sqlite3.Row = Depends(require_admin)):
+def patch_requirement(
+    lineage_id: str,
+    payload: RequirementPatch,
+    background_tasks: BackgroundTasks,
+    conn: sqlite3.Connection = Depends(get_db),
+    _admin: sqlite3.Row = Depends(require_admin),
+):
     previous = conn.execute("SELECT q.* FROM requirement_lineages l JOIN regulatory_requirements q ON q.id=l.current_version_id WHERE l.id=?", (lineage_id,)).fetchone()
     if previous is None:
         raise ApiError(404, "not_found", "Requirement not found.")
@@ -120,10 +126,15 @@ def patch_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.
             change_id = uuid.uuid4().hex
             conn.execute("INSERT INTO regulatory_changes (id,lineage_id,source,previous_requirement_id,new_requirement_id,change_type,old_value,new_value,summary,source_section,effective_date,analysis_status,created_at) VALUES (?,?, 'manual',?,?,?,?,?,?,?,?, 'pending',?)", (change_id,lineage_id,previous["id"],requirement_id,change_type,old_value,new_value,summary,data["source_section"],data["effective_date"],now))
     conn.commit()
+    job_id = None
     if change_id:
-        impact.analyse_change(conn, change_id)
-        conn.commit()
-    return {"requirement": dict(conn.execute("SELECT * FROM regulatory_requirements WHERE id=?", (requirement_id,)).fetchone()), "change_id": change_id, "job_id": None}
+        job_id = jobs.create_job(
+            conn, "change_analysis", "regulatory_change", change_id,
+            initiated_by=_admin["id"],
+            input_payload={"change_id": change_id, "trigger_scan": True},
+        )
+        jobs.run_job(background_tasks, get_connection, job_id, scanning.run_change_analysis_job)
+    return {"requirement": dict(conn.execute("SELECT * FROM regulatory_requirements WHERE id=?", (requirement_id,)).fetchone()), "change_id": change_id, "job_id": job_id}
 
 
 @router.post("/{lineage_id}/simulate", status_code=202)

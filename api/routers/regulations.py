@@ -12,7 +12,7 @@ from api.access import require_admin
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, mapping, openai, parsing, retrieval, storage
+from api.services import impact, jobs, mapping, openai, parsing, retrieval, scanning, storage
 
 router = APIRouter(prefix="/regulations", tags=["regulations"])
 
@@ -21,6 +21,51 @@ _KINDS = {"primary", "amendment", "guidance", "notice", "decision", "consultatio
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _detect_amendment_changes(conn: sqlite3.Connection, regulation_id: str) -> list[str]:
+    regulation = conn.execute(
+        "SELECT amends_regulation_id FROM regulations WHERE id=?", (regulation_id,)
+    ).fetchone()
+    if regulation is None or not regulation["amends_regulation_id"]:
+        return []
+    created: list[str] = []
+    current_versions = conn.execute(
+        "SELECT * FROM regulatory_requirements WHERE regulation_id=? AND version > 1",
+        (regulation_id,),
+    ).fetchall()
+    for current in current_versions:
+        previous = conn.execute(
+            "SELECT * FROM regulatory_requirements WHERE superseded_by=?", (current["id"],)
+        ).fetchone()
+        if previous is None:
+            continue
+        existing = conn.execute(
+            """SELECT id FROM regulatory_changes
+               WHERE detected_from_regulation_id=? AND lineage_id=?""",
+            (regulation_id, current["lineage_id"]),
+        ).fetchone()
+        if existing:
+            created.append(existing["id"])
+            continue
+        change_type, old_value, new_value, summary = impact.change_fields(previous, dict(current))
+        if change_type == "editorial":
+            continue
+        change_id = uuid.uuid4().hex
+        conn.execute(
+            """INSERT INTO regulatory_changes
+               (id,lineage_id,source,detected_from_regulation_id,
+                previous_requirement_id,new_requirement_id,change_type,old_value,
+                new_value,summary,source_section,effective_date,analysis_status,created_at)
+               VALUES (?,?,'amendment',?,?,?,?,?,?,?,?,?,'pending',?)""",
+            (
+                change_id, current["lineage_id"], regulation_id, previous["id"],
+                current["id"], change_type, old_value, new_value, summary,
+                current["source_section"], current["effective_date"], _now(),
+            ),
+        )
+        created.append(change_id)
+    return created
 
 
 def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
@@ -87,12 +132,22 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
         jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
         return
     usage = usage.add(mapping_result.usage)
+    change_ids = _detect_amendment_changes(conn, regulation_id)
     conn.execute("UPDATE regulations SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, regulation_id))
     conn.commit()
+    scan_id = None
+    scan_job_id = None
+    scan_created = False
+    if change_ids:
+        scan_id, scan_job_id, scan_created = scanning.start_scan(
+            conn, trigger="policy_change", scope="stale"
+        )
     jobs.update_job(
-        conn, job_id, status="succeeded", progress=1, step="Ready",
-        result={"page_count": parsed.page_count, "requirement_count": requirement_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "token_usage": usage.as_dict(), "estimated_cost_usd": _estimated_cost(usage)},
+        conn, job_id, status="succeeded", progress=1, step="completed",
+        result={"page_count": parsed.page_count, "requirement_count": requirement_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "token_usage": usage.as_dict(), "estimated_cost_usd": usage.estimated_cost_usd, "change_ids": change_ids, "scan_id": scan_id, "scan_job_id": scan_job_id},
     )
+    if scan_created and scan_job_id:
+        scanning.run_scan_job(conn, scan_job_id)
 
 
 def _estimated_cost(usage: openai.Usage) -> float:
@@ -134,7 +189,10 @@ async def upload_regulation(
             (regulation_id, title.strip(), jurisdiction, document_kind, amends_regulation_id,
              effective_date, relative_path, file.filename or "upload.pdf", _now()),
         )
-        job_id = jobs.create_job(conn, "regulation_ingest", "regulation", regulation_id)
+        job_id = jobs.create_job(
+            conn, "regulation_ingest", "regulation", regulation_id,
+            initiated_by=_admin["id"], input_payload={"regulation_id": regulation_id},
+        )
     except Exception:
         storage.delete_file(relative_path)
         raise

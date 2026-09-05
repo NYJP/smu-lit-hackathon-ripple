@@ -153,7 +153,8 @@ _COMPLETION_SCHEMA: dict[str, set[str]] = {
     "mapping_passes": {"basis_hash", "materially_checked_at"},
     "jobs": {
         "initiated_by", "prompt_tokens", "completion_tokens",
-        "estimated_cost_usd", "retry_of_job_id",
+        "estimated_cost_usd", "retry_of_job_id", "input_json",
+        "stage_counters", "retryable",
     },
     "impact_cache": set(),
     "simulation_requirement_snapshots": set(),

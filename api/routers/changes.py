@@ -6,13 +6,13 @@ import json
 import sqlite3
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from api.auth import get_current_user
-from api.db import get_db
+from api.db import get_connection, get_db
 from api.errors import ApiError
 from api.services import changes as change_service
-from api.services import impact
+from api.services import impact, jobs, scanning
 
 router = APIRouter(prefix="/changes", tags=["changes"])
 _LEVEL_RANK = {"high": 0, "medium": 1, "low": 2, "none": 3}
@@ -132,13 +132,24 @@ def get_change(
 @router.post("/{change_id}/analyse", status_code=202)
 def analyse_change(
     change_id: str,
+    background_tasks: BackgroundTasks,
     conn: sqlite3.Connection = Depends(get_db),
     user: sqlite3.Row = Depends(get_current_user),
 ):
     _require_change(conn, user, change_id)
-    result = impact.analyse_change(conn, change_id)
-    conn.commit()
-    return {"change_id": change_id, **result.as_dict()}
+    active = conn.execute(
+        """SELECT id FROM jobs WHERE job_type='change_analysis' AND subject_id=?
+           AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1""",
+        (change_id,),
+    ).fetchone()
+    if active:
+        return {"change_id": change_id, "job_id": active["id"]}
+    job_id = jobs.create_job(
+        conn, "change_analysis", "regulatory_change", change_id,
+        initiated_by=user["id"], input_payload={"change_id": change_id},
+    )
+    jobs.run_job(background_tasks, get_connection, job_id, scanning.run_change_analysis_job)
+    return {"change_id": change_id, "job_id": job_id}
 
 
 @router.get("/{change_id}/impacts")

@@ -41,6 +41,9 @@ def create_job(
     subject_id: str,
     *,
     initiated_by: str | None = None,
+    input_payload: dict[str, Any] | None = None,
+    retry_of_job_id: str | None = None,
+    retryable: bool = True,
 ) -> str:
     """Insert a `queued` job row and return its id. Call this synchronously,
     in the request handler, before scheduling the background task — the
@@ -52,11 +55,15 @@ def create_job(
         """
         INSERT INTO jobs (
           id, job_type, subject_type, subject_id, status, progress, step,
-          initiated_by, created_at, updated_at
+          initiated_by, input_json, retry_of_job_id, retryable, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, 'queued', 0, 'Queued', ?, ?, ?)
+        VALUES (?, ?, ?, ?, 'queued', 0, 'queued', ?, ?, ?, ?, ?, ?)
         """,
-        (job_id, job_type, subject_type, subject_id, initiated_by, now, now),
+        (
+            job_id, job_type, subject_type, subject_id, initiated_by,
+            json.dumps(input_payload) if input_payload is not None else None,
+            retry_of_job_id, int(retryable), now, now,
+        ),
     )
     conn.commit()
     return job_id
@@ -110,6 +117,7 @@ def update_job(
     step: str | None = None,
     error_message: str | None = None,
     result: dict[str, Any] | None = None,
+    stage_counters: dict[str, Any] | None = None,
 ) -> None:
     """Incremental, immediately-committed update. Only the fields passed
     are changed; the rest keep their current value. This is what makes
@@ -132,6 +140,9 @@ def update_job(
     if result is not None:
         fields.append("result = ?")
         values.append(json.dumps(result))
+    if stage_counters is not None:
+        fields.append("stage_counters = ?")
+        values.append(json.dumps(stage_counters))
     if not fields:
         return
     fields.append("updated_at = ?")
@@ -143,6 +154,26 @@ def update_job(
 
 def get_job(conn: sqlite3.Connection, job_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+
+
+def retry_job(conn: sqlite3.Connection, job_id: str, initiated_by: str) -> str:
+    """Clone a failed retryable job while retaining lineage and inputs."""
+    source = get_job(conn, job_id)
+    if source is None:
+        raise KeyError(job_id)
+    if source["status"] != "failed" or not source["retryable"]:
+        raise ValueError("Only failed retryable jobs can be retried.")
+    payload = json.loads(source["input_json"]) if source["input_json"] else None
+    return create_job(
+        conn,
+        source["job_type"],
+        source["subject_type"],
+        source["subject_id"],
+        initiated_by=initiated_by,
+        input_payload=payload,
+        retry_of_job_id=source["id"],
+        retryable=bool(source["retryable"]),
+    )
 
 
 def list_jobs(conn: sqlite3.Connection, status: str | None = None) -> list[sqlite3.Row]:
@@ -167,6 +198,11 @@ def job_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "step": row["step"],
         "error_message": row["error_message"],
         "result": json.loads(result_raw) if result_raw else None,
+        "subject_type": row["subject_type"],
+        "subject_id": row["subject_id"],
+        "stage_counters": json.loads(row["stage_counters"]) if row["stage_counters"] else {},
+        "retryable": bool(row["retryable"]),
+        "retry_of_job_id": row["retry_of_job_id"],
         "usage": {
             "prompt_tokens": row["prompt_tokens"],
             "completion_tokens": row["completion_tokens"],

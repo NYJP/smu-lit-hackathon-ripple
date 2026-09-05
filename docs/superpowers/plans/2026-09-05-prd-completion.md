@@ -140,17 +140,17 @@
 - Modify: `api/routers/requirements.py`
 - Modify: `api/routers/changes.py`
 
-- [ ] Add named job stages `queued`, `detecting_gaps`, `mapping`, `evaluating_impacts`, `finalizing`, `completed`, and `failed`; persist stage counters and usage after each batch.
-- [ ] Implement exact scan gaps: G1 unmapped document/lineage pairs, G2 newly added documents requiring inheritance checks, G3 dependencies whose evidence chunk/span no longer resolves, and G4 mapping passes whose stored basis hash differs from current source hashes.
-- [ ] Ensure only one scan job runs at a time. `POST /scans` accepts `scope=stale|full`; full scans require `confirmed: true`, while stale scans start with one click.
-- [ ] Return `202 { scan_id, job_id }` immediately and update documents scanned, mapping pairs checked, dependencies added/reactivated, impacts created, cache hits, tokens, and cost incrementally.
-- [ ] Chain a `document_added` stale scan after successful document ingestion and a `policy_change` stale scan after requirement propagation or regulation amendment detection.
-- [ ] Change `POST /changes/{id}/analyse` to enqueue impact analysis and return `202 { change_id, job_id }`. Duplicate requests return the active job rather than starting a second analysis.
-- [ ] Add `POST /jobs/{id}/retry`. Any authenticated account may retry a failed job; copy the original job input and set `retry_of_job_id`.
-- [ ] Make user-initiated and system jobs visible to every authenticated account with complete resource counts.
-- [ ] Make all automatic triggers transactional: source persistence commits first, then job creation; a job-creation failure leaves an actionable failed job rather than rolling back the uploaded source.
-- [ ] Run `python -m compileall api` and manually verify that uploading one document returns an ingestion job that is followed by a scan job.
-- [ ] Commit with message `feat: run scans and impact analysis as background jobs`.
+- [x] Add named job stages `queued`, `detecting_gaps`, `mapping`, `evaluating_impacts`, `finalizing`, `completed`, and `failed`; persist stage counters and usage after each batch.
+- [x] Implement exact scan gaps: G1 unmapped document/lineage pairs, G2 newly added documents requiring inheritance checks, G3 dependencies whose evidence chunk/span no longer resolves, and G4 mapping passes whose stored basis hash differs from current source hashes.
+- [x] Ensure only one scan job runs at a time. `POST /scans` accepts `scope=stale|full`; full scans require `confirmed: true`, while stale scans start with one click.
+- [x] Return `202 { scan_id, job_id }` immediately and update documents scanned, mapping pairs checked, dependencies added/reactivated, impacts created, cache hits, tokens, and cost incrementally.
+- [x] Chain a `document_added` stale scan after successful document ingestion and a `policy_change` stale scan after requirement propagation or regulation amendment detection.
+- [x] Change `POST /changes/{id}/analyse` to enqueue impact analysis and return `202 { change_id, job_id }`. Duplicate requests return the active job rather than starting a second analysis.
+- [x] Add `POST /jobs/{id}/retry`. Any authenticated account may retry a failed job; copy the original job input and set `retry_of_job_id`.
+- [x] Make user-initiated and system jobs visible to every authenticated account with complete resource counts.
+- [x] Make all automatic triggers transactional: source persistence commits first, then job creation; a job-creation failure leaves an actionable failed job rather than rolling back the uploaded source.
+- [x] Run `python -m compileall api` and manually verify that uploading one document returns an ingestion job that is followed by a scan job.
+- [x] Commit with message `feat: run scans and impact analysis as background jobs`.
 
 ### Task 5: Complete simulations, including add operations and promotion
 

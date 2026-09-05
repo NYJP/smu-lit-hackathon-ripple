@@ -14,7 +14,7 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, mapping, openai, parsing, retrieval, storage
+from api.services import jobs, mapping, openai, parsing, retrieval, scanning, storage
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -94,24 +94,56 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
         unembedded_count = sum(1 for chunk in parsed.chunks if chunk.chunk_type != "heading" and len(chunk.content) >= 60)
     try:
         with conn:
-            # A new document has no chunks yet. Deleting first also keeps a retry idempotent.
+            # Reuse chunk ids by ordinal so dependencies survive a re-upload
+            # long enough for G3 to inspect their evidence against new text.
+            old_chunks = {
+                row["ordinal"]: row for row in conn.execute(
+                    "SELECT * FROM document_chunks WHERE document_id=?", (document_id,)
+                ).fetchall()
+            }
             conn.execute("DELETE FROM fts_chunks WHERE chunk_id IN (SELECT id FROM document_chunks WHERE document_id = ?)", (document_id,))
-            conn.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
+            for old_chunk in old_chunks.values():
+                conn.execute("DELETE FROM vec_chunks WHERE chunk_id=?", (old_chunk["id"],))
+            current_ordinals: set[int] = set()
             for chunk in parsed.chunks:
-                chunk_id = uuid.uuid4().hex
-                conn.execute(
-                    """INSERT INTO document_chunks
-                       (id, document_id, ordinal, content, section_path, section_title, page_number,
-                        char_start, char_end, chunk_type, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (chunk_id, document_id, chunk.ordinal, chunk.content, chunk.section_path,
-                     chunk.section_title, chunk.page_number, chunk.char_start, chunk.char_end,
-                     chunk.chunk_type, now),
-                )
+                current_ordinals.add(chunk.ordinal)
+                existing_chunk = old_chunks.get(chunk.ordinal)
+                chunk_id = existing_chunk["id"] if existing_chunk else uuid.uuid4().hex
+                if existing_chunk:
+                    conn.execute(
+                        """UPDATE document_chunks SET content=?, section_path=?, section_title=?,
+                           page_number=?, char_start=?, char_end=?, chunk_type=? WHERE id=?""",
+                        (chunk.content, chunk.section_path, chunk.section_title, chunk.page_number,
+                         chunk.char_start, chunk.char_end, chunk.chunk_type, chunk_id),
+                    )
+                else:
+                    conn.execute(
+                        """INSERT INTO document_chunks
+                           (id, document_id, ordinal, content, section_path, section_title, page_number,
+                            char_start, char_end, chunk_type, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (chunk_id, document_id, chunk.ordinal, chunk.content, chunk.section_path,
+                         chunk.section_title, chunk.page_number, chunk.char_start, chunk.char_end,
+                         chunk.chunk_type, now),
+                    )
                 conn.execute("INSERT INTO fts_chunks (chunk_id, content, section_path) VALUES (?, ?, ?)", (chunk_id, chunk.content, chunk.section_path or ""))
                 if chunk.ordinal in embeddings:
                     import sqlite_vec
                     conn.execute("INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)", (chunk_id, sqlite_vec.serialize_float32(embeddings[chunk.ordinal])))
+            for ordinal, old_chunk in old_chunks.items():
+                if ordinal in current_ordinals:
+                    continue
+                linked = conn.execute(
+                    "SELECT 1 FROM dependencies WHERE document_chunk_id=? LIMIT 1", (old_chunk["id"],)
+                ).fetchone()
+                if linked:
+                    conn.execute(
+                        """UPDATE document_chunks SET content='', section_title='Removed content',
+                           chunk_type='other', char_start=NULL, char_end=NULL WHERE id=?""",
+                        (old_chunk["id"],),
+                    )
+                else:
+                    conn.execute("DELETE FROM document_chunks WHERE id=?", (old_chunk["id"],))
             conn.execute("UPDATE documents SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, document_id))
     except Exception:
         message = "The document could not be saved."
@@ -129,7 +161,12 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
         # complete; the mapping gap can be safely retried by the scan wave.
         mapping_error = str(exc)
     usage = embedding_usage.add(mapping_result.usage)
-    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="Ready", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count, "unembedded_count": unembedded_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "mapping_error": mapping_error, "token_usage": usage.as_dict(), "estimated_cost_usd": round(usage.total_tokens * 0.02 / 1_000_000, 8)})
+    scan_id, scan_job_id, scan_created = scanning.start_scan(
+        conn, trigger="document_added", scope="document", scope_id=document_id
+    )
+    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="completed", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count, "unembedded_count": unembedded_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "mapping_error": mapping_error, "token_usage": usage.as_dict(), "estimated_cost_usd": usage.estimated_cost_usd, "scan_id": scan_id, "scan_job_id": scan_job_id})
+    if scan_created:
+        scanning.run_scan_job(conn, scan_job_id)
 
 
 @router.post("", status_code=202)
@@ -178,13 +215,15 @@ async def upload_documents(
                            VALUES (?, ?, ?, ?, ?)""",
                         (document_id, collaborator_id, collaborator_access, user["id"], _now()),
                     )
-            job_id = jobs.create_job(conn, "document_ingest", "document", document_id)
+            job_id = jobs.create_job(
+                conn, "document_ingest", "document", document_id,
+                initiated_by=user["id"], input_payload={"document_id": document_id},
+            )
         except Exception:
             conn.rollback()
             storage.delete_file(relative_path)
             raise
         jobs.run_job(background_tasks, get_connection, job_id, _ingest_document)
-        # Scan execution starts in its own later wave; no synthetic scan row is created here.
         responses.append({"document_id": document_id, "job_id": job_id, "scan_id": None})
     return {"documents": responses}
 

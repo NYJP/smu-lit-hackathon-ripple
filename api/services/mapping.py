@@ -287,7 +287,8 @@ def _write_dependency(conn: sqlite3.Connection, lineage_id: str, chunk: sqlite3.
     return 0
 
 
-def _write_pass(conn: sqlite3.Connection, document_id: str, lineage_id: str, direction: str, found: bool, candidates_seen: int, scan_id: str | None) -> None:
+def mapping_basis_hash(conn: sqlite3.Connection, document_id: str, lineage_id: str) -> str:
+    """Hash the current requirement and complete current document text."""
     requirement = conn.execute(
         """SELECT q.* FROM requirement_lineages l
            JOIN regulatory_requirements q ON q.id = l.current_version_id
@@ -301,7 +302,12 @@ def _write_pass(conn: sqlite3.Connection, document_id: str, lineage_id: str, dir
     digest.update(change_utils.requirement_content_hash(requirement).encode("ascii"))
     for chunk in chunks:
         digest.update(change_utils.document_chunk_hash(chunk).encode("ascii"))
+    return digest.hexdigest()
+
+
+def _write_pass(conn: sqlite3.Connection, document_id: str, lineage_id: str, direction: str, found: bool, candidates_seen: int, scan_id: str | None) -> None:
     now = _now()
+    basis_hash = mapping_basis_hash(conn, document_id, lineage_id)
     conn.execute(
         """INSERT INTO mapping_passes
            (document_id, lineage_id, direction, dependency_found, candidates_seen,
@@ -311,7 +317,7 @@ def _write_pass(conn: sqlite3.Connection, document_id: str, lineage_id: str, dir
              candidates_seen = excluded.candidates_seen, scan_id = excluded.scan_id,
              mapped_at = excluded.mapped_at, basis_hash = excluded.basis_hash,
              materially_checked_at = excluded.materially_checked_at""",
-        (document_id, lineage_id, direction, int(found), candidates_seen, scan_id, now, digest.hexdigest(), now),
+        (document_id, lineage_id, direction, int(found), candidates_seen, scan_id, now, basis_hash, now),
     )
 
 

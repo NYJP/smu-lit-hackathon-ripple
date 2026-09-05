@@ -13,7 +13,7 @@ import sqlite_vec
 
 from api import db
 from api.errors import ApiError
-from api.services import impact, openai, parsing, storage
+from api.services import impact, mapping, openai, parsing, storage
 
 SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample-environment"
 SCENARIOS_FILE = SAMPLE_ROOT / "scenarios.json"
@@ -193,8 +193,14 @@ def _seed_dependencies(conn: sqlite3.Connection, seeded: list[tuple[str, dict[st
                 )
                 created += 1
             conn.execute(
-                "INSERT INTO mapping_passes (document_id,lineage_id,direction,dependency_found,candidates_seen,mapped_at) VALUES (?,?,'document_first',?,?,?)",
-                (document["id"], lineage_id, int(match is not None), len(chunks), now),
+                """INSERT INTO mapping_passes
+                   (document_id,lineage_id,direction,dependency_found,candidates_seen,
+                    mapped_at,basis_hash,materially_checked_at)
+                   VALUES (?,?,'document_first',?,?,?,?,?)""",
+                (
+                    document["id"], lineage_id, int(match is not None), len(chunks), now,
+                    mapping.mapping_basis_hash(conn, document["id"], lineage_id), now,
+                ),
             )
     return created
 
