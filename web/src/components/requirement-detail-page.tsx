@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowUpRight, Download, FileText, LoaderCircle, Scale } from
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { RegulationPdfViewer } from "@/components/regulation-pdf-viewer";
 import { api, apiUrl, ApiRequestError } from "@/lib/api";
 
 type Requirement = {
@@ -16,6 +17,7 @@ type Requirement = {
   value: string | null;
   source_section: string | null;
   source_page: number | null;
+  verbatim_text: string | null;
 };
 
 type Dependency = {
@@ -74,7 +76,7 @@ export function RequirementDetailPage() {
 
       {data.regulation && regulationFileUrl ? <section className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-muted-foreground">Original regulation</p><Link href={`/regulations/${data.regulation.id}`} className="mt-1 inline-flex items-center gap-2 font-medium hover:underline"><Scale className="size-4" />{data.regulation.title}</Link></div><Button asChild variant="outline"><a href={regulationFileUrl}><Download />Download original</a></Button></div>
-        <div className="mt-3 overflow-hidden rounded-lg border"><iframe title={data.regulation.title} src={`${regulationFileUrl}?inline=true${data.current_version.source_page ? `#page=${data.current_version.source_page}` : ""}`} className="h-[65vh] w-full bg-muted/20" /></div>
+        <div className="mt-3"><RegulationPdfViewer src={`${regulationFileUrl}?inline=true`} title={data.regulation.title} quotation={data.current_version.verbatim_text ?? data.current_version.requirement_text} preferredPage={data.current_version.source_page} /></div>
       </section> : null}
 
       <section className="mt-8">
