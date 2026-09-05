@@ -161,6 +161,7 @@ _COMPLETION_SCHEMA: dict[str, set[str]] = {
     "dependency_events": set(),
     "recommendation_decisions": set(),
     "impact_review_events": set(),
+    "document_contributions": set(),
 }
 
 

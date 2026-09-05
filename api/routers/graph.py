@@ -7,6 +7,7 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_db
 from api.errors import ApiError
+from api.services import contributions
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -60,6 +61,12 @@ def get_graph(change_id: str | None = None, regulation_id: str | None = None, do
             target = f"sec:{row['document_chunk_id']}"
             nodes.setdefault(target, {"id": target, "kind": "section", "parent": doc_id, "label": row["section_path"] or row["name"], "page": row["page_number"], "state": state})
         edge_impact = impacts_by_dependency.get(row["id"])
+        contributor = contributions.for_span(
+            conn,
+            row["document_chunk_id"],
+            edge_impact["conflicting_start"] if edge_impact else row["evidence_start"],
+            edge_impact["conflicting_end"] if edge_impact else row["evidence_end"],
+        )
         edges.append({
             "id": row["id"],
             "source": req_id,
@@ -77,5 +84,6 @@ def get_graph(change_id: str | None = None, regulation_id: str | None = None, do
             "change_summary": edge_impact["change_summary"] if edge_impact else None,
             "affected_start": edge_impact["conflicting_start"] if edge_impact else None,
             "affected_end": edge_impact["conflicting_end"] if edge_impact else None,
+            "contributor": contributor,
         })
     return {"nodes": list(nodes.values()), "edges": edges, "hidden_document_count": 0}

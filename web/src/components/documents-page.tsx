@@ -46,6 +46,7 @@ type DocumentItem = {
   open_impact_count: number;
   owner: { id: string; display_name: string };
   collaborators: Array<{ id: string; display_name: string }>;
+  contributors: Array<{ id: string; display_name: string }>;
 };
 type Job = {
   id: string;
@@ -205,7 +206,7 @@ export function DocumentsPageContent() {
               <TableHead>Document</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Owner</TableHead>
-              <TableHead>Shared with</TableHead>
+              <TableHead>Contributors</TableHead>
               <TableHead>Issues</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -242,8 +243,8 @@ export function DocumentsPageContent() {
                   </TableCell>
                   <TableCell>{item.owner.display_name}</TableCell>
                   <TableCell>
-                    {item.collaborators.length
-                      ? item.collaborators
+                    {item.contributors.length
+                      ? item.contributors
                           .map((person) => person.display_name)
                           .join(", ")
                       : "—"}

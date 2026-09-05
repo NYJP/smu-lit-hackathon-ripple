@@ -12,7 +12,7 @@ from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
 from api.services import changes as change_service
-from api.services import impact, jobs, scanning
+from api.services import contributions, impact, jobs, scanning
 
 router = APIRouter(prefix="/changes", tags=["changes"])
 _LEVEL_RANK = {"high": 0, "medium": 1, "low": 2, "none": 3}
@@ -208,6 +208,9 @@ def list_change_impacts(
     items = []
     for row in rows:
         item = dict(row)
+        item["contributor"] = contributions.for_span(
+            conn, row["chunk_id"], row["conflicting_start"], row["conflicting_end"]
+        )
         citations = item.get("source_citations")
         if citations:
             item["source_citations"] = json.loads(citations)

@@ -14,7 +14,7 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, mapping, openai, parsing, retrieval, scanning, storage
+from api.services import contributions, jobs, mapping, openai, parsing, retrieval, scanning, storage
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -145,6 +145,8 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
                 else:
                     conn.execute("DELETE FROM document_chunks WHERE id=?", (old_chunk["id"],))
             conn.execute("UPDATE documents SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, document_id))
+            owner = conn.execute("SELECT owner_id FROM documents WHERE id = ?", (document_id,)).fetchone()
+            contributions.assign_document_to_owner(conn, document_id, owner["owner_id"])
     except Exception:
         message = "The document could not be saved."
         conn.execute("UPDATE documents SET status = 'failed', error_message = ? WHERE id = ?", (message, document_id))
@@ -261,7 +263,12 @@ def list_documents(
     items = []
     for row in rows:
         item = {key: row[key] for key in ("id", "name", "doc_type", "status", "page_count", "chunk_count", "dependency_count", "open_impact_count", "created_at")}
-        item.update({"owner": {"id": row["owner_id"], "display_name": row["owner_name"]}, "collaborators": _document_collaborators(conn, row["id"]), "last_scanned_at": None})
+        item.update({
+            "owner": {"id": row["owner_id"], "display_name": row["owner_name"]},
+            "collaborators": _document_collaborators(conn, row["id"]),
+            "contributors": contributions.for_document(conn, row["id"]),
+            "last_scanned_at": None,
+        })
         items.append(item)
     return {"items": items, "next_cursor": rows[-1]["created_at"] if more else None}
 
@@ -340,10 +347,15 @@ def _document_detail(conn: sqlite3.Connection, document_id: str) -> dict:
     for chunk in chunks:
         deps = conn.execute("""SELECT dep.*, l.public_ref FROM dependencies dep JOIN requirement_lineages l ON l.id = dep.lineage_id
                              WHERE dep.document_chunk_id = ? AND dep.status = 'active'""", (chunk["id"],)).fetchall()
-        rendered.append({**dict(chunk), "dependencies": [{key: dep[key] for key in ("lineage_id", "public_ref", "confidence", "relationship_type", "evidence_start", "evidence_end")} for dep in deps]})
+        rendered.append({
+            **dict(chunk),
+            "dependencies": [{key: dep[key] for key in ("lineage_id", "public_ref", "confidence", "relationship_type", "evidence_start", "evidence_end")} for dep in deps],
+            "contributions": contributions.for_chunk(conn, chunk["id"]),
+        })
     document = dict(doc)
     document["owner"] = {"id": doc["owner_id"], "display_name": doc["owner_name"]}
     document["collaborators"] = _document_collaborators(conn, document_id)
+    document["contributors"] = contributions.for_document(conn, document_id)
     return {"document": document, "chunks": rendered}
 
 

@@ -13,7 +13,7 @@ import sqlite_vec
 
 from api import db
 from api.errors import ApiError
-from api.services import impact, mapping, openai, parsing, storage
+from api.services import contributions, impact, mapping, openai, parsing, storage
 
 SAMPLE_ROOT = Path(__file__).resolve().parents[2] / "sample-environment"
 SCENARIOS_FILE = SAMPLE_ROOT / "scenarios.json"
@@ -108,6 +108,7 @@ def _load_document(conn: sqlite3.Connection, source: Path, item: dict[str, Any])
             (chunk_id, document_id, chunk.ordinal, chunk.content, chunk.section_path, chunk.section_title, chunk.page_number, chunk.char_start, chunk.char_end, chunk.chunk_type, now),
         )
         conn.execute("INSERT INTO fts_chunks (chunk_id,content,section_path) VALUES (?,?,?)", (chunk_id, chunk.content, chunk.section_path or ""))
+    contributions.assign_sample_contributors(conn, document_id)
     return document_id
 
 

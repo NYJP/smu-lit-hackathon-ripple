@@ -52,6 +52,7 @@ type Impact = {
   document_id: string;
   document_name: string;
   owner_name: string;
+  contributor: { id: string; display_name: string } | null;
   chunk_id: string;
   chunk_content: string;
   section_path: string | null;
@@ -119,7 +120,7 @@ export function ChangeDetailPage() {
         {impacts.length ? impacts.map((impact) => <Link key={impact.impact_id} href={passageHref(impact)} className="group flex gap-4 p-4 transition-colors hover:bg-muted/40">
           <FileText className="mt-0.5 size-5 shrink-0 text-destructive" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium group-hover:underline">{impact.document_name}</p><p className="mt-1 text-xs text-muted-foreground">Written by {impact.owner_name}{impact.section_path ? ` · ${impact.section_path}` : ""}{impact.page_number ? ` · page ${impact.page_number}` : ""}</p></div><div className="flex items-center gap-2"><Badge variant="destructive" className="capitalize">{impact.impact_level} impact</Badge><span className="text-xs text-muted-foreground">{Math.round(impact.confidence * 100)}%</span><ArrowUpRight className="size-4 text-muted-foreground" /></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium group-hover:underline">{impact.document_name}</p><p className="mt-1 text-xs text-muted-foreground">Affected sentence written by {impact.contributor?.display_name ?? impact.owner_name}{impact.section_path ? ` · ${impact.section_path}` : ""}{impact.page_number ? ` · page ${impact.page_number}` : ""}</p></div><div className="flex items-center gap-2"><Badge variant="destructive" className="capitalize">{impact.impact_level} impact</Badge><span className="text-xs text-muted-foreground">{Math.round(impact.confidence * 100)}%</span><ArrowUpRight className="size-4 text-muted-foreground" /></div></div>
             <p className="mt-3 text-sm leading-6">{impact.reason}</p>
             <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{impact.chunk_content}</p>
           </div>

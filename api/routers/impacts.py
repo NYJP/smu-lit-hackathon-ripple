@@ -15,6 +15,7 @@ from api.auth import get_current_user
 from api.db import get_db
 from api.errors import ApiError
 from api.services import changes as change_service
+from api.services import contributions
 from api.services import recommendations as recommendation_service
 
 router = APIRouter(prefix="/impacts", tags=["impacts"])
@@ -103,7 +104,14 @@ def list_impacts(
             LIMIT ? OFFSET ?""",
         [*values, limit, offset],
     ).fetchall()
-    return {"items": [dict(row) for row in rows], "total": total, "limit": limit, "offset": offset}
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["contributor"] = contributions.for_span(
+            conn, row["document_chunk_id"], row["conflicting_start"], row["conflicting_end"]
+        )
+        items.append(item)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/{impact_id}")
@@ -164,6 +172,9 @@ def get_impact(
             "collaborators": [dict(row) for row in collaborators],
         },
         "chunk": dict(chunk),
+        "contributor": contributions.for_span(
+            conn, chunk["id"], impact["conflicting_start"], impact["conflicting_end"]
+        ),
         "recommendation": recommendation,
         "review_history": review_history,
         "capabilities": {
