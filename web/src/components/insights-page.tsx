@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, FileText, GitBranch } from "lucide-react";
 import { api } from "@/lib/api";
@@ -8,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DependencyGraph } from "@/components/dependency-graph";
 
 type Dashboard = { impact_counts: Record<string, number>; documents_visible: number; recent_changes: Change[] };
-type Change = { id: string; summary: string; change_type: string; analysis_status: string; created_at: string; impact_count?: number };
+type Change = { id: string; summary: string; change_type: string; analysis_status: string; created_at: string; impact_count?: number; counts?: Record<string, number> };
 
 function Loading() { return <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>; }
 
@@ -26,7 +27,7 @@ export function ChangesView() {
   const [items, setItems] = useState<Change[] | null>(null);
   useEffect(() => { api.get<{ items: Change[] }>("/changes").then(result => setItems(result.items)).catch(() => setItems([])); }, []);
   if (!items) return <Loading />;
-  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Change feed</p><h1 className="text-2xl font-semibold tracking-tight">Regulatory changes</h1></div><div className="mt-7 overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Change</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Impacts</TableHead></TableRow></TableHeader><TableBody>{items.length ? items.map(item => <TableRow key={item.id}><TableCell className="font-medium"><a className="hover:underline" href={`/changes/${item.id}`}>{item.summary}</a></TableCell><TableCell className="capitalize">{item.change_type}</TableCell><TableCell><Badge variant="outline">{item.analysis_status}</Badge></TableCell><TableCell className="text-right tabular-nums">{item.impact_count ?? 0}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="py-12 text-center text-muted-foreground">No regulatory changes have been detected.</TableCell></TableRow>}</TableBody></Table></div></div>;
+  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Change feed</p><h1 className="text-2xl font-semibold tracking-tight">Regulatory changes</h1></div><div className="mt-7 overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Change</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Impacts</TableHead></TableRow></TableHeader><TableBody>{items.length ? items.map(item => <TableRow key={item.id}><TableCell className="font-medium"><Link className="hover:underline" href={`/changes/${item.id}`}>{item.summary}</Link></TableCell><TableCell className="capitalize">{item.change_type}</TableCell><TableCell><Badge variant="outline">{item.analysis_status}</Badge></TableCell><TableCell className="text-right tabular-nums">{item.impact_count ?? ((item.counts?.high ?? 0) + (item.counts?.medium ?? 0) + (item.counts?.low ?? 0))}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="py-12 text-center text-muted-foreground">No regulatory changes have been detected.</TableCell></TableRow>}</TableBody></Table></div></div>;
 }
 
 export function GraphView() {
