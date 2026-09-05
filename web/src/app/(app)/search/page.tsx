@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { SearchPageContent } from "@/components/search-page";
 
 export default function SearchPage() {
-  return <NotBuiltYet title="Search" endpoint="/search" />;
+  return <SearchPageContent />;
 }
