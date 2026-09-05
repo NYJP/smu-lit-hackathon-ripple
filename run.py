@@ -22,6 +22,7 @@ primary error surface.
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import shutil
 import subprocess
@@ -108,13 +109,66 @@ def cmd_install(args: argparse.Namespace) -> None:
 
 # --------------------------------------------------------------------- dev --
 
+def _read_env_file(path: Path) -> dict[str, str]:
+    """Minimal KEY=VALUE reader for the root .env file.
+
+    Deliberately not python-dotenv: this file's docstring promises
+    "standard library only." Only used to let `dev` pick RIPPLE_API_PORT
+    and NEXT_PUBLIC_API_BASE_URL out of .env and thread them into both
+    child processes; api/main.py still does its own (python-dotenv) load
+    for everything else the API reads.
+    """
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.split("#", 1)[0].strip()
+        if key:
+            values[key] = value
+    return values
+
+
+def _dev_env() -> dict[str, str]:
+    """os.environ, filled in from .env for keys not already set (real
+    environment variables always win, matching python-dotenv's default)."""
+    merged = dict(os.environ)
+    for key, value in _read_env_file(ROOT / ".env").items():
+        merged.setdefault(key, value)
+    return merged
+
+
+def _terminate_tree(proc: subprocess.Popen) -> None:
+    """Terminate `proc` and everything it spawned.
+
+    On Windows, `npm run dev` runs through a `cmd.exe` wrapper that starts
+    node, which (with Turbopack) starts further worker processes — none of
+    them in `proc`'s own process handle. `Popen.terminate()` only signals
+    the immediate process, so the web dev server survives its parent being
+    killed and keeps the port bound after `dev` exits. `taskkill /T` walks
+    the whole tree by PID instead, which is what "still tears both down on
+    Ctrl+C" actually requires here.
+    """
+    if platform.system() == "Windows":
+        subprocess.run(
+            ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+            capture_output=True,
+        )
+    else:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+
+
 def _shutdown(procs: list[subprocess.Popen], exit_code: int) -> None:
     for proc in procs:
         if proc.poll() is None:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
+            _terminate_tree(proc)
     deadline = time.time() + 5
     for proc in procs:
         remaining = max(0.0, deadline - time.time())
@@ -152,10 +206,18 @@ def cmd_dev(args: argparse.Namespace) -> None:
     if not (ROOT / ".env").exists():
         announce("No .env found  -  copy .env.example to .env and add an OpenAI key when you need OpenAI features.")
 
-    announce("Starting the API on http://127.0.0.1:8000 ...")
+    env = _dev_env()
+    # RIPPLE_API_PORT lets `dev` move off 8000 when something else on the
+    # machine already holds it, without editing this file  -  set it in
+    # .env (or the shell) and both processes pick it up from here.
+    api_port = env.get("RIPPLE_API_PORT", "8000")
+    api_base_url = env.get("NEXT_PUBLIC_API_BASE_URL", f"http://localhost:{api_port}/api/v1")
+
+    announce(f"Starting the API on http://127.0.0.1:{api_port} ...")
     api_proc = subprocess.Popen(
-        [str(py), "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", "8000"],
+        [str(py), "-m", "uvicorn", "api.main:app", "--host", "127.0.0.1", "--port", api_port],
         cwd=str(ROOT),
+        env=env,
     )
     procs = [api_proc]
 
@@ -164,11 +226,21 @@ def cmd_dev(args: argparse.Namespace) -> None:
         if npm is None:
             _shutdown(procs, 1)
             fail("npm not found on PATH.", "Install Node.js, then run 'python run.py install'.")
-        announce("Starting the web app on http://localhost:3000 ...")
-        web_proc = subprocess.Popen([npm, "run", "dev"], cwd=str(WEB_DIR))
+
+        # Keep web/.env.local in sync with the port actually used this run,
+        # so a moved RIPPLE_API_PORT never has to be hand-copied into two
+        # places (PRD section 9 preamble: this is the value every fetch in
+        # the web app is built from).
+        env_local = WEB_DIR / ".env.local"
+        env_local.write_text(f"NEXT_PUBLIC_API_BASE_URL={api_base_url}\n", encoding="utf-8")
+
+        announce(f"Starting the web app on http://localhost:3000 (API base {api_base_url}) ...")
+        web_env = dict(env)
+        web_env["NEXT_PUBLIC_API_BASE_URL"] = api_base_url
+        web_proc = subprocess.Popen([npm, "run", "dev"], cwd=str(WEB_DIR), env=web_env)
         procs.append(web_proc)
     else:
-        announce("NOTE: web/ does not exist yet  -  the web app arrives in the next wave.")
+        announce("NOTE: web/ has no package.json  -  run 'python run.py install' to set it up.")
         announce("Running the API alone. Press Ctrl+C to stop.")
 
     supervise(procs)
