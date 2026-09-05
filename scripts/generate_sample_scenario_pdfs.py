@@ -1,4 +1,5 @@
 """Generate the bundled synthetic regulation PDFs for sample scenarios."""
+import argparse
 from pathlib import Path
 
 from reportlab.lib.colors import HexColor
@@ -8,6 +9,28 @@ from reportlab.lib.units import mm
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
 
 ROOT = Path(__file__).resolve().parents[1] / "sample-environment" / "scenarios"
+PDPF_ROOT = ROOT.parent / "regulations"
+
+PDPF = {
+    "primary": ("Personal Data Retention Regulation 2024", "PDPF 2024", [
+        ("1. Scope", "This Regulation applies to customer, employee, supplier, and prospect personal data processed by an organisation."),
+        ("2. Definitions", "Personal data means information that identifies or can reasonably identify an individual."),
+        ("Section 4 Customer Record Retention", "Customer records must be retained for 5 years after the relationship ends."),
+        ("Section 6 Access Restrictions", "Access to personal data must be limited to authorised personnel."),
+        ("Section 8 Breach Notification", "Notifiable personal-data breaches must be reported within 72 hours."),
+        ("Section 10 Data-Subject Access Requests", "Data-subject access requests must be completed within 30 days."),
+        ("Section 12 Processor Agreements", "Processor agreements must contain confidentiality, security, and audit duties."),
+        ("Section 14 Cross-Border Transfers", "A transfer impact assessment must be completed before personal data is transferred overseas."),
+        ("Section 16 Consent Withdrawal", "Consent withdrawal requests must be applied to active processing systems without undue delay."),
+    ]),
+    "amendment": ("Personal Data Retention Amendment 2026", "PDPF Amendment 2026", [
+        ("1. Amendment", "Sections 4, 8, and 10 of the Personal Data Retention Regulation 2024 are replaced."),
+        ("Section 4 Customer Record Retention", "Customer records must be retained for 7 years after the relationship ends."),
+        ("Section 8 Breach Notification", "Notifiable personal-data breaches must be reported within 24 hours."),
+        ("Section 10 Data-Subject Access Requests", "Data-subject access requests must be completed within 21 days."),
+        ("5. Effective Date", "This Amendment takes effect on 1 January 2027."),
+    ]),
+}
 
 SCENARIOS = {
     "merger-acquisition": {
@@ -91,8 +114,18 @@ def create_pdf(path: Path, title: str, reference: str, sections: list[tuple[str,
     document.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
-for scenario_id, documents in SCENARIOS.items():
+parser = argparse.ArgumentParser()
+parser.add_argument("--scenario", choices=["all", "pdpf", *SCENARIOS], default="all")
+args = parser.parse_args()
+
+selected = SCENARIOS.items() if args.scenario == "all" else [(args.scenario, SCENARIOS[args.scenario])] if args.scenario in SCENARIOS else []
+for scenario_id, documents in selected:
     for kind, (title, reference, sections) in documents.items():
         suffix = "Amendment 2026" if kind == "amendment" else "2025"
         base = title.removesuffix(f" {suffix}")
         create_pdf(ROOT / scenario_id / "regulations" / f"{base} {suffix}.pdf", title, reference, sections)
+
+if args.scenario in {"all", "pdpf"}:
+    for kind, (title, reference, sections) in PDPF.items():
+        suffix = "Amendment 2026" if kind == "amendment" else "Regulation 2024"
+        create_pdf(PDPF_ROOT / f"Personal Data Retention {suffix}.pdf", title, reference, sections)
