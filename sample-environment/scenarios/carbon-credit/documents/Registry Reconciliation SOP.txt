@@ -1,0 +1,3 @@
+Registry Reconciliation SOP
+
+Registry holdings must be reconciled monthly against the carbon ledger. Exceptions are assigned to the registry operations owner for resolution.

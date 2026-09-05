@@ -1,0 +1,3 @@
+Dispatch Operations SOP
+
+Dispatch instructions must be acknowledged and logged immediately by the duty operator. Variances are recorded against the relevant generating unit.

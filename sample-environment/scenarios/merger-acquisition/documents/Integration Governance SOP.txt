@@ -1,0 +1,3 @@
+Integration Governance SOP
+
+Integration decision records, synergy approvals, and Day One control decisions are retained for 7 years after completion.

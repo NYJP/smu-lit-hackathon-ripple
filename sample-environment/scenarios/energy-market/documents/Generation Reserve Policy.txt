@@ -1,0 +1,3 @@
+Generation Reserve Policy
+
+Each licensed generation unit must maintain an operating reserve margin of 15 percent during normal market operation. Control-room staff escalate forecast shortfalls.

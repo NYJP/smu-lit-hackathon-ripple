@@ -1,0 +1,89 @@
+{
+  "pdpf": {
+    "label": "PDPF",
+    "description": "Personal data retention, access controls, and breach escalation.",
+    "root": ".",
+    "primary": {"file": "regulations/Personal Data Retention Regulation 2024.pdf", "title": "Personal Data Retention Regulation 2024", "short_name": "PDPF"},
+    "amendment": {"file": "regulations/Personal Data Retention Amendment 2026.pdf", "title": "Personal Data Retention Amendment 2026", "short_name": "PDPF"},
+    "documents": [
+      {"file": "documents/Customer Data SOP.docx", "owner": "Alex Tan", "doc_type": "sop"},
+      {"file": "documents/Data Retention Policy.pdf", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "documents/DPA Template.docx", "owner": "Alex Tan", "doc_type": "template"},
+      {"file": "documents/Employee Handbook.pdf", "owner": "Sam Rahim", "doc_type": "training"},
+      {"file": "documents/Privacy Playbook.txt", "owner": "Priya Menon", "doc_type": "playbook"}
+    ],
+    "requirements": [
+      {"public_ref": "PDPF-001", "subject": "customer_record_retention", "requirement_type": "duration", "text": "Customer records must be retained for 5 years after the relationship ends.", "value": "5 years", "value_numeric": 5, "value_unit": "years", "source_section": "Section 4", "new_text": "Customer records must be retained for 7 years after the relationship ends.", "new_value": "7 years", "new_value_numeric": 7, "change_type": "duration", "change_summary": "Customer Record Retention: 5 years to 7 years", "match_phrases": ["5 years"]},
+      {"public_ref": "PDPF-002", "subject": "data_access_restriction", "requirement_type": "obligation", "text": "Access to personal data must be limited to authorised personnel.", "source_section": "Section 6", "match_phrases": ["applicable data protection law"]},
+      {"public_ref": "PDPF-003", "subject": "breach_notification", "requirement_type": "notification", "text": "Material personal-data breaches must be escalated promptly.", "source_section": "Section 8", "match_phrases": ["material personal-data breaches"]}
+    ]
+  },
+  "merger-acquisition": {
+    "label": "Merger & Acquisition",
+    "description": "Deal approvals, merger control, due diligence, and integration governance.",
+    "root": "scenarios/merger-acquisition",
+    "primary": {"file": "regulations/Merger Control Regulation 2025.pdf", "title": "Merger Control Regulation 2025", "short_name": "MCR"},
+    "amendment": {"file": "regulations/Merger Control Amendment 2026.pdf", "title": "Merger Control Amendment 2026", "short_name": "MCR"},
+    "documents": [
+      {"file": "documents/Acquisition Approval Policy.txt", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "documents/Deal Due Diligence Playbook.txt", "owner": "Alex Tan", "doc_type": "playbook"},
+      {"file": "documents/Integration Governance SOP.txt", "owner": "Sam Rahim", "doc_type": "sop"}
+    ],
+    "requirements": [
+      {"public_ref": "MA-001", "subject": "transaction_notification_threshold", "requirement_type": "threshold", "text": "Transactions valued above SGD 50 million require pre-closing notification.", "value": "SGD 50 million", "value_numeric": 50, "value_unit": "million SGD", "source_section": "Section 3", "new_text": "Transactions valued above SGD 25 million require pre-closing notification.", "new_value": "SGD 25 million", "new_value_numeric": 25, "change_type": "threshold", "change_summary": "Transaction notification threshold: SGD 50 million to SGD 25 million", "match_phrases": ["SGD 50 million"]},
+      {"public_ref": "MA-002", "subject": "competition_due_diligence", "requirement_type": "obligation", "text": "Acquirers must complete competition due diligence before signing.", "source_section": "Section 5", "match_phrases": ["competition due diligence"]},
+      {"public_ref": "MA-003", "subject": "integration_records", "requirement_type": "duration", "text": "Integration decision records must be retained for 7 years.", "value": "7 years", "value_numeric": 7, "value_unit": "years", "source_section": "Section 8", "match_phrases": ["integration decision records"]}
+    ]
+  },
+  "capital-markets": {
+    "label": "Capital Markets",
+    "description": "Issuer disclosures, offering controls, and material transaction reporting.",
+    "root": "scenarios/capital-markets",
+    "primary": {"file": "regulations/Capital Markets Disclosure Rules 2025.pdf", "title": "Capital Markets Disclosure Rules 2025", "short_name": "CMDR"},
+    "amendment": {"file": "regulations/Capital Markets Disclosure Amendment 2026.pdf", "title": "Capital Markets Disclosure Amendment 2026", "short_name": "CMDR"},
+    "documents": [
+      {"file": "documents/Issuer Disclosure Policy.txt", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "documents/Offering Review Checklist.txt", "owner": "Alex Tan", "doc_type": "checklist"},
+      {"file": "documents/Trading Controls SOP.txt", "owner": "Sam Rahim", "doc_type": "sop"}
+    ],
+    "requirements": [
+      {"public_ref": "CM-001", "subject": "material_transaction_reporting", "requirement_type": "threshold", "text": "Transactions above SGD 10 million must be disclosed to the market.", "value": "SGD 10 million", "value_numeric": 10, "value_unit": "million SGD", "source_section": "Rule 4.2", "new_text": "Transactions above SGD 5 million must be disclosed to the market.", "new_value": "SGD 5 million", "new_value_numeric": 5, "change_type": "threshold", "change_summary": "Market disclosure threshold: SGD 10 million to SGD 5 million", "match_phrases": ["SGD 10 million"]},
+      {"public_ref": "CM-002", "subject": "prospectus_verification", "requirement_type": "obligation", "text": "Every prospectus statement must be supported by verification evidence.", "source_section": "Rule 6.1", "match_phrases": ["prospectus verification evidence"]},
+      {"public_ref": "CM-003", "subject": "inside_information_control", "requirement_type": "obligation", "text": "Inside information must be restricted until public disclosure.", "source_section": "Rule 9.3", "match_phrases": ["inside information"]}
+    ]
+  },
+  "energy-market": {
+    "label": "Energy Market",
+    "description": "Generation reserves, dispatch operations, and market incident reporting.",
+    "root": "scenarios/energy-market",
+    "primary": {"file": "regulations/Energy Market Reliability Code 2025.pdf", "title": "Energy Market Reliability Code 2025", "short_name": "EMRC"},
+    "amendment": {"file": "regulations/Energy Market Reliability Amendment 2026.pdf", "title": "Energy Market Reliability Amendment 2026", "short_name": "EMRC"},
+    "documents": [
+      {"file": "documents/Generation Reserve Policy.txt", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "documents/Dispatch Operations SOP.txt", "owner": "Alex Tan", "doc_type": "sop"},
+      {"file": "documents/Market Incident Playbook.txt", "owner": "Sam Rahim", "doc_type": "playbook"}
+    ],
+    "requirements": [
+      {"public_ref": "EM-001", "subject": "operating_reserve_margin", "requirement_type": "threshold", "text": "Licensed generators must maintain an operating reserve margin of 15 percent.", "value": "15 percent", "value_numeric": 15, "value_unit": "percent", "source_section": "Clause 4.1", "new_text": "Licensed generators must maintain an operating reserve margin of 20 percent.", "new_value": "20 percent", "new_value_numeric": 20, "change_type": "threshold", "change_summary": "Operating reserve margin: 15 percent to 20 percent", "match_phrases": ["15 percent"]},
+      {"public_ref": "EM-002", "subject": "dispatch_instruction", "requirement_type": "obligation", "text": "Dispatch instructions must be acknowledged and logged immediately.", "source_section": "Clause 6.2", "match_phrases": ["dispatch instructions"]},
+      {"public_ref": "EM-003", "subject": "market_incident_notification", "requirement_type": "notification", "text": "Material market incidents must be reported within 2 hours.", "value": "2 hours", "value_numeric": 2, "value_unit": "hours", "source_section": "Clause 8.5", "match_phrases": ["market incidents"]}
+    ]
+  },
+  "carbon-credit": {
+    "label": "Carbon Credit",
+    "description": "Credit retirement, project verification, and registry reconciliation.",
+    "root": "scenarios/carbon-credit",
+    "primary": {"file": "regulations/Carbon Credit Integrity Standard 2025.pdf", "title": "Carbon Credit Integrity Standard 2025", "short_name": "CCIS"},
+    "amendment": {"file": "regulations/Carbon Credit Integrity Amendment 2026.pdf", "title": "Carbon Credit Integrity Amendment 2026", "short_name": "CCIS"},
+    "documents": [
+      {"file": "documents/Carbon Credit Retirement Policy.txt", "owner": "Priya Menon", "doc_type": "policy"},
+      {"file": "documents/Project Verification Playbook.txt", "owner": "Alex Tan", "doc_type": "playbook"},
+      {"file": "documents/Registry Reconciliation SOP.txt", "owner": "Sam Rahim", "doc_type": "sop"}
+    ],
+    "requirements": [
+      {"public_ref": "CC-001", "subject": "credit_retirement_deadline", "requirement_type": "duration", "text": "Credits used for a claim must be retired within 12 months of the claim date.", "value": "12 months", "value_numeric": 12, "value_unit": "months", "source_section": "Standard 3.4", "new_text": "Credits used for a claim must be retired within 6 months of the claim date.", "new_value": "6 months", "new_value_numeric": 6, "change_type": "duration", "change_summary": "Credit retirement deadline: 12 months to 6 months", "match_phrases": ["12 months"]},
+      {"public_ref": "CC-002", "subject": "project_verification", "requirement_type": "obligation", "text": "Every credited project must pass independent verification.", "source_section": "Standard 5.1", "match_phrases": ["independent verification"]},
+      {"public_ref": "CC-003", "subject": "registry_reconciliation", "requirement_type": "obligation", "text": "Registry holdings must be reconciled monthly.", "value": "monthly", "source_section": "Standard 7.2", "match_phrases": ["registry holdings"]}
+    ]
+  }
+}

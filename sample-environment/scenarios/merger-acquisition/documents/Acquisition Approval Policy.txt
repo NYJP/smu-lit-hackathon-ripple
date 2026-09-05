@@ -1,0 +1,3 @@
+Acquisition Approval Policy
+
+Transactions valued above SGD 50 million require pre-closing notification and board approval. The deal team must not sign or close until Legal confirms the notification position.
