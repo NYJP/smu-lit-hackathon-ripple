@@ -61,6 +61,7 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
     jobs.update_job(conn, job_id, progress=0.35, step="Extracting requirements")
     try:
         extracted, usage = retrieval.extract_requirements(conn, parsed)
+        jobs.add_usage(conn, job_id, usage)
         jobs.update_job(conn, job_id, progress=0.75, step="Saving requirements")
         requirement_count = retrieval.persist_requirements(conn, regulation_id, row["amends_regulation_id"], extracted)
     except openai.ExternalServiceError as exc:
@@ -78,7 +79,7 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
             (regulation_id,),
         ).fetchall()
         for lineage in lineages:
-            mapping_result = mapping_result.add(mapping.map_lineage(conn, lineage["id"]))
+            mapping_result = mapping_result.add(mapping.map_lineage(conn, lineage["id"], job_id=job_id))
     except openai.ExternalServiceError as exc:
         message = str(exc)
         conn.execute("UPDATE regulations SET status = 'failed', error_message = ? WHERE id = ?", (message, regulation_id))

@@ -87,6 +87,7 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
     try:
         jobs.update_job(conn, job_id, progress=0.5, step="Embedding chunks")
         embeddings, embedding_usage = retrieval.embed_chunks(parsed.chunks)
+        jobs.add_usage(conn, job_id, embedding_usage)
     except openai.ExternalServiceError:
         # A failed embedding batch leaves the parsed document readable and
         # keyword-searchable; the job records the gap for reindex recovery.
@@ -122,7 +123,7 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
     mapping_error = None
     try:
         jobs.update_job(conn, job_id, progress=0.85, step="Mapping dependencies")
-        mapping_result = mapping.map_document(conn, document_id)
+        mapping_result = mapping.map_document(conn, document_id, job_id=job_id)
     except openai.ExternalServiceError as exc:
         # Parsed content remains available even if dependency analysis cannot
         # complete; the mapping gap can be safely retried by the scan wave.

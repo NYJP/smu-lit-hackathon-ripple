@@ -242,7 +242,12 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
     embedding_count, embedding_usage = _embed_environment(conn)
     dependency_count = _seed_dependencies(conn, seeded)
     impact_count = sum(impact.analyse_change(conn, change_id) for change_id in changes)
-    expected_embeddings = conn.execute("SELECT (SELECT COUNT(*) FROM document_chunks) + (SELECT COUNT(*) FROM regulatory_requirements) AS n").fetchone()["n"]
+    expected_embeddings = conn.execute(
+        """SELECT
+             (SELECT COUNT(*) FROM document_chunks
+              WHERE chunk_type <> 'heading' AND length(trim(content)) >= 60)
+             + (SELECT COUNT(*) FROM regulatory_requirements) AS n"""
+    ).fetchone()["n"]
     checks = {
         "documents": conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"] == len(item["documents"]),
         "regulations": conn.execute("SELECT COUNT(*) AS n FROM regulations").fetchone()["n"] == 2,
