@@ -40,6 +40,11 @@ class SimulationCreate(BaseModel):
     note: str | None = None
     edits: list[Edit] = Field(min_length=1)
 
+class SimulationPatch(BaseModel):
+    name: str | None = None
+    note: str | None = None
+    edits: list[Edit] | None = None
+
 
 def _require(conn: sqlite3.Connection, simulation_id: str, user: sqlite3.Row) -> sqlite3.Row:
     row = conn.execute("SELECT * FROM simulations WHERE id = ?", (simulation_id,)).fetchone()
@@ -81,6 +86,23 @@ def get_simulation(simulation_id: str, conn: sqlite3.Connection = Depends(get_db
     return {"simulation": dict(simulation), "edits": [dict(row) for row in edits], "changes": [dict(row) for row in changes]}
 
 
+@router.patch("/{simulation_id}")
+def patch_simulation(simulation_id: str, payload: SimulationPatch, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
+    _require(conn, simulation_id, user)
+    if payload.name is not None:
+        conn.execute("UPDATE simulations SET name=? WHERE id=?", (payload.name, simulation_id))
+    if payload.note is not None:
+        conn.execute("UPDATE simulations SET note=? WHERE id=?", (payload.note, simulation_id))
+    if payload.edits is not None:
+        conn.execute("DELETE FROM regulatory_changes WHERE simulation_id=?", (simulation_id,))
+        conn.execute("DELETE FROM simulation_edits WHERE simulation_id=?", (simulation_id,))
+        _save_edits(conn, simulation_id, payload.edits)
+        conn.execute("UPDATE simulations SET status='draft' WHERE id=?", (simulation_id,))
+    conn.execute("UPDATE simulations SET updated_at=? WHERE id=?", (_now(), simulation_id))
+    conn.commit()
+    return get_simulation(simulation_id, conn, user)
+
+
 @router.post("/{simulation_id}/estimate")
 def estimate_simulation(simulation_id: str, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
     _require(conn, simulation_id, user)
@@ -110,6 +132,31 @@ def run_simulation(simulation_id: str, conn: sqlite3.Connection = Depends(get_db
     conn.execute("UPDATE simulations SET status='complete', updated_at=? WHERE id=?", (_now(), simulation_id))
     conn.commit()
     return {"simulation_id": simulation_id}
+
+
+@router.post("/{simulation_id}/promote")
+def promote_simulation(simulation_id: str, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
+    simulation = _require(conn, simulation_id, user)
+    if user["role"] != "admin":
+        raise ApiError(403, "forbidden", "An admin account is required to promote a simulation.")
+    if simulation["status"] != "complete":
+        raise ApiError(409, "conflict", "Run the simulation before promoting it.")
+    promoted: list[dict] = []
+    changes = conn.execute("SELECT * FROM regulatory_changes WHERE simulation_id=?", (simulation_id,)).fetchall()
+    for change in changes:
+        if not change["lineage_id"] or change["change_type"] == "removed":
+            continue
+        previous = conn.execute("SELECT * FROM regulatory_requirements WHERE id=?", (change["previous_requirement_id"],)).fetchone()
+        snapshot = json.loads(change["proposed_snapshot"] or "{}")
+        requirement_id = uuid.uuid4().hex
+        conn.execute("UPDATE regulatory_requirements SET is_current=0, superseded_by=? WHERE id=?", (requirement_id, previous["id"]))
+        conn.execute("INSERT INTO regulatory_requirements (id,lineage_id,regulation_id,version,requirement_text,verbatim_text,requirement_type,subject,value,value_numeric,value_unit,comparator,condition,exception,source_section,source_page,effective_date,origin,is_current,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',1,?)", (requirement_id,previous["lineage_id"],previous["regulation_id"],previous["version"] + 1,snapshot.get("requirement_text",previous["requirement_text"]),previous["verbatim_text"],previous["requirement_type"],snapshot.get("subject",previous["subject"]),snapshot.get("value",previous["value"]),snapshot.get("value_numeric",previous["value_numeric"]),snapshot.get("value_unit",previous["value_unit"]),snapshot.get("comparator",previous["comparator"]),snapshot.get("condition",previous["condition"]),snapshot.get("exception",previous["exception"]),snapshot.get("source_section",previous["source_section"]),previous["source_page"],snapshot.get("effective_date",previous["effective_date"]),_now()))
+        conn.execute("UPDATE requirement_lineages SET current_version_id=? WHERE id=?", (requirement_id, previous["lineage_id"]))
+        conn.execute("UPDATE regulatory_changes SET source='manual', simulation_id=NULL, new_requirement_id=?, proposed_snapshot=NULL WHERE id=?", (requirement_id, change["id"]))
+        promoted.append({"change_id": change["id"], "requirement_id": requirement_id})
+    conn.execute("UPDATE simulations SET status='promoted', updated_at=? WHERE id=?", (_now(), simulation_id))
+    conn.commit()
+    return {"changes": promoted}
 
 
 @router.delete("/{simulation_id}", status_code=204)
