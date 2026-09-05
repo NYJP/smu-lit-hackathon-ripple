@@ -82,8 +82,8 @@ def test_no_endpoint_accepts_a_password_or_token_field(client, users):
 
 def test_member_posting_to_regulations_gets_403(client, users):
     """Criterion 41 (part 1): a member session posting to /regulations
-    receives 403. Admin passes the same gate and reaches the honest 501 —
-    proving the check is a real dependency, not a coincidence of the stub."""
+    receives 403. Admin passes the same gate and reaches multipart request
+    validation, proving the check is a real dependency."""
     login_as(client, users["Alex Tan"]["id"])
     resp = client.post("/api/v1/regulations")
     assert resp.status_code == 403
@@ -91,7 +91,7 @@ def test_member_posting_to_regulations_gets_403(client, users):
 
     login_as(client, users["Priya Menon"]["id"])
     resp = client.post("/api/v1/regulations")
-    assert resp.status_code == 501
+    assert resp.status_code == 422
 
 
 def test_member_requesting_full_scan_gets_403(client, users):
