@@ -154,7 +154,9 @@ python run.py reindex    # rebuild the vec_* and fts_* mirror tables
 
 `[DEFAULT]` **A single Python entrypoint, not a Makefile.** Python is already a hard dependency; GNU make is not present on a default Windows machine, and maintaining a Makefile plus PowerShell equivalents means writing every task twice and having them drift. `run.py` uses only the standard library (`argparse`, `subprocess`, `venv`, `pathlib`), runs identically on Windows, macOS, and Linux, and is the single place task automation lives. `dev` supervises both child processes and terminates both on Ctrl+C or on either one exiting. Every command prints what it is about to do before doing it, and fails with a readable message naming the fix — never a traceback as the primary error surface.
 
-On boot the API MUST: create `./data/` if absent, run migrations, load `sqlite-vec`, verify `OPENAI_API_KEY` is set, and — if the `users` table is empty — insert the three default accounts from §5.5. A missing key is a fatal startup error with a clear message, never a silent fallback to keyword-only behaviour. There is no setup step and no first-run wizard: `python run.py install && python run.py dev` on a clean checkout reaches a usable app.
+On boot the API MUST: create `./data/` if absent, run migrations, load `sqlite-vec`, and — if the `users` table is empty — insert the three default accounts from §5.5.
+
+`[DEFAULT]` **A missing `OPENAI_API_KEY` does not stop the app booting.** It boots, `/health` reports the key as absent, and every endpoint that would call OpenAI fails immediately with a `503` naming the missing variable. Refusing to start is the wrong failure mode: it makes the app unusable for reading an existing corpus, and it hides the reason behind a process that never comes up. What must never happen is a silent fallback to keyword-only behaviour — the failure has to be loud at the point of use. There is no setup step and no first-run wizard: `python run.py install && python run.py dev` on a clean checkout reaches a usable app.
 
 ### 5.3 Configuration
 
@@ -208,7 +210,7 @@ The distinction matters for how you build it, not just how you describe it. The 
 | Impacts, recommendations | Follows the document | Owner, `reviewer` collaborators, admins |
 | Simulations | Creator and admins | Creator and admins |
 | Users | Everyone sees the roster — you cannot tag someone you cannot name | Admins only |
-| Scans | Initiator and admins | Any member (scoped to what they can see) |
+| Scans | Initiator and admins | Any member, scoped to what they can see — **except `scope = 'full'`, which is admin-only** (§9.10, §8.5) |
 
 **One accessor, everywhere.** The service layer exposes exactly one function, `visible_document_ids(user)`, returning owned ∪ tagged ∪ (all, if admin). Every query that touches documents, chunks, dependencies, impacts, or recommendations filters through it. There is no second path. Counts, dashboards, search results, graph nodes, and export files are all filtered by it — a member must not be able to infer the existence of a colleague's document from a count.
 
@@ -846,6 +848,10 @@ Trigger B is the answer to *"break the new document down into the policies it re
 
 FastAPI. Base path `/api/v1`. JSON in, JSON out. The API binds to `127.0.0.1` only.
 
+**Cookies across the two dev ports.** The web app runs on `:3000` and the API on `:8000`. Those are different *origins* but the same *site* — the registrable domain is what defines a site, and ports are not part of it — so `SameSite=Lax` does not block these requests and needs no relaxing. What is required is CORS: set `allow_origins` to exactly `["http://localhost:3000"]` (from an env var, never `*`, which browsers reject alongside credentials anyway) and `allow_credentials=True`. The session cookie is `httpOnly`, `SameSite=Lax`, `Path=/`, and **not** `Secure` in local development, because there is no HTTPS on localhost and a `Secure` cookie would simply never be stored.
+
+Correspondingly, **every fetch from the web app must set `credentials: "include"`**. Omitting it is the single most likely defect in the web build: the cookie is silently not sent, every authenticated call returns `401`, and the app looks like it has a broken session rather than a missing fetch option. Put the fetch wrapper in one module and set it there once.
+
 **Every endpoint except `/users`, `/auth/session`, and `/health` requires a valid session cookie.** Every endpoint that touches documents, chunks, dependencies, impacts, or recommendations filters through `visible_document_ids(user)` (§5.5). Every endpoint that writes regulations, requirements, or amendment-sourced changes requires `role = 'admin'` and returns `403` otherwise. List endpoints accept `?limit=` (default 50, max 200) and `?cursor=`.
 
 Error envelope for every 4xx/5xx:
@@ -935,7 +941,7 @@ Simulated changes are reachable through the normal change and impact endpoints (
 | `GET` | `/jobs/{id}` | → `{id, job_type, status, progress, step, error_message, result}` |
 | `GET` | `/jobs?status=running` | Active jobs, for a global progress indicator. |
 | `GET` | `/dashboard` | → `{totals: {regulations, requirements, documents, chunks, dependencies, open_impacts}, recent_changes: [...5], attention: {high_impact_open, unmapped_documents}}` |
-| `GET` | `/health` | → `{status, db: "ok", openai: "ok" \| "unreachable", embedding_dims}` |
+| `GET` | `/health` | → `{status, db: "ok", openai, embedding_dims}`. `openai` is `"unconfigured"` (no key), `"configured"` (key present, not yet exercised), `"ok"` (a call has succeeded this run), or `"unreachable"` (a call has failed). Never report `"ok"` on the strength of a key existing — that is a reachability claim, and claiming it untested is exactly the kind of unearned confidence §10.1 rule 2 exists to prevent. |
 
 `/dashboard` totals and `attention` are visibility-filtered; `attention.unmapped_documents` and `attention.stale_since` drive the Scan prompt in the UI.
 
@@ -948,7 +954,7 @@ Simulated changes are reachable through the normal change and impact endpoints (
 | `DELETE` | `/auth/session` | Ends the session. → `204` |
 | `GET` | `/auth/me` | → `{user: {id, display_name, role}}`, or `401` |
 | `POST` | `/users` | Admin only. `{display_name, role}`. → `201` |
-| `PATCH` | `/users/{id}` | Admin only. `{display_name?, role?}`. → `200` |
+| `PATCH` | `/users/{id}` | Admin only. `{display_name?, role?}`. Demoting the last remaining admin is refused with `409`, exactly as deleting them is — a guard that only covers `DELETE` is trivially walked around with a `PATCH`. → `200` |
 | `DELETE` | `/users/{id}` | Admin only. Requires `?reassign_to=<user_id>` when the user owns documents; `409` with the owned-document count otherwise. Refused with `409` if it would leave no admin. → `204` |
 
 Role checks are still enforced server-side — a `member` session posting to `/regulations` gets `403` — but note what that is worth: anyone can create a session as the admin. The check exists so the application behaves correctly, not because it withstands anything.
