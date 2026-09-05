@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import db
+from api.services import openai
 from api.errors import ApiError, code_for_status, error_envelope
 from api.routers import (
     auth as auth_router,
@@ -124,13 +125,10 @@ def health() -> dict:
         logger.exception("Health check could not open the database")
         db_status = "error"
 
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    openai_status = "configured" if openai_key else "unconfigured"
-
     return {
         "status": "ok" if db_status == "ok" else "error",
         "db": db_status,
-        "openai": openai_status,
+        "openai": openai.status(),
         "embedding_dims": db.EMBEDDING_DIMS,
     }
 

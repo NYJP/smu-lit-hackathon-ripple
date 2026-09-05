@@ -111,15 +111,15 @@ def test_member_requesting_full_scan_gets_403(client, users):
 
 def test_two_members_get_byte_identical_requirements_lists(client, users):
     """Criterion 41 (part 3): two different members querying /requirements
-    receive byte-identical lists. Meaningful even against a 501 stub: it
-    proves the response does not vary by who is asking."""
+    receive byte-identical lists, proving the response does not vary by
+    who is asking."""
     login_as(client, users["Alex Tan"]["id"])
     alex_resp = client.get("/api/v1/requirements")
 
     login_as(client, users["Sam Rahim"]["id"])
     sam_resp = client.get("/api/v1/requirements")
 
-    assert alex_resp.status_code == sam_resp.status_code == 501
+    assert alex_resp.status_code == sam_resp.status_code == 200
     assert alex_resp.content == sam_resp.content
 
 

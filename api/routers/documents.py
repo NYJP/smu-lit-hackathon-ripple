@@ -14,7 +14,7 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, parsing, storage
+from api.services import jobs, openai, parsing, retrieval, storage
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -81,6 +81,16 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
 
     jobs.update_job(conn, job_id, progress=0.65, step="Saving chunks")
     now = _now()
+    embeddings: dict[int, list[float]] = {}
+    embedding_usage = openai.Usage()
+    unembedded_count = 0
+    try:
+        jobs.update_job(conn, job_id, progress=0.5, step="Embedding chunks")
+        embeddings, embedding_usage = retrieval.embed_chunks(parsed.chunks)
+    except openai.ExternalServiceError:
+        # A failed embedding batch leaves the parsed document readable and
+        # keyword-searchable; the job records the gap for reindex recovery.
+        unembedded_count = sum(1 for chunk in parsed.chunks if chunk.chunk_type != "heading" and len(chunk.content) >= 60)
     try:
         with conn:
             # A new document has no chunks yet. Deleting first also keeps a retry idempotent.
@@ -98,6 +108,9 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
                      chunk.chunk_type, now),
                 )
                 conn.execute("INSERT INTO fts_chunks (chunk_id, content, section_path) VALUES (?, ?, ?)", (chunk_id, chunk.content, chunk.section_path or ""))
+                if chunk.ordinal in embeddings:
+                    import sqlite_vec
+                    conn.execute("INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)", (chunk_id, sqlite_vec.serialize_float32(embeddings[chunk.ordinal])))
             conn.execute("UPDATE documents SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, document_id))
     except Exception:
         message = "The document could not be saved."
@@ -105,7 +118,7 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
         conn.commit()
         jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
         return
-    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="Ready", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count})
+    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="Ready", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count, "unembedded_count": unembedded_count, "token_usage": embedding_usage.as_dict(), "estimated_cost_usd": round(embedding_usage.total_tokens * 0.02 / 1_000_000, 8)})
 
 
 @router.post("", status_code=202)
@@ -119,6 +132,7 @@ async def upload_documents(
     conn: sqlite3.Connection = Depends(get_db),
     user: sqlite3.Row = Depends(get_current_user),
 ):
+    openai.require_configured()
     if doc_type not in _DOC_TYPES:
         raise ApiError(422, "validation_error", "Invalid document type.")
     storage.enforce_batch_size(len(files))

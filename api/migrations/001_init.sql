@@ -337,12 +337,12 @@ CREATE INDEX IF NOT EXISTS idx_jobs_recent ON jobs(created_at DESC);
 -- sqlite-vec. Dimension MUST match RIPPLE_EMBEDDING_MODEL (1536 for text-embedding-3-small).
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
   chunk_id TEXT PRIMARY KEY,
-  embedding FLOAT[1536]
+  embedding FLOAT[1536] distance_metric=cosine
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_requirements USING vec0(
   requirement_id TEXT PRIMARY KEY,
-  embedding FLOAT[1536]
+  embedding FLOAT[1536] distance_metric=cosine
 );
 
 -- FTS5 for lexical retrieval and keyword search.

@@ -12,7 +12,7 @@ from api.access import require_admin
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, parsing, storage
+from api.services import jobs, openai, parsing, retrieval, storage
 
 router = APIRouter(prefix="/regulations", tags=["regulations"])
 
@@ -28,7 +28,7 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
     if job is None:
         return
     regulation_id = job["subject_id"]
-    row = conn.execute("SELECT file_path FROM regulations WHERE id = ?", (regulation_id,)).fetchone()
+    row = conn.execute("SELECT file_path, amends_regulation_id FROM regulations WHERE id = ?", (regulation_id,)).fetchone()
     if row is None:
         jobs.update_job(conn, job_id, status="failed", error_message="Regulation not found.")
         return
@@ -58,16 +58,28 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
         jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
         return
 
-    # Requirement extraction is intentionally outside this ingestion wave.
-    conn.execute(
-        "UPDATE regulations SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?",
-        (parsed.page_count, regulation_id),
-    )
+    jobs.update_job(conn, job_id, progress=0.35, step="Extracting requirements")
+    try:
+        extracted, usage = retrieval.extract_requirements(conn, parsed)
+        jobs.update_job(conn, job_id, progress=0.75, step="Saving requirements")
+        requirement_count = retrieval.persist_requirements(conn, regulation_id, row["amends_regulation_id"], extracted)
+    except openai.ExternalServiceError as exc:
+        message = str(exc)
+        conn.execute("UPDATE regulations SET status = 'failed', error_message = ? WHERE id = ?", (message, regulation_id))
+        conn.commit()
+        jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
+        return
+    conn.execute("UPDATE regulations SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, regulation_id))
     conn.commit()
     jobs.update_job(
         conn, job_id, status="succeeded", progress=1, step="Ready",
-        result={"page_count": parsed.page_count, "requirement_count": 0},
+        result={"page_count": parsed.page_count, "requirement_count": requirement_count, "token_usage": usage.as_dict(), "estimated_cost_usd": _estimated_cost(usage)},
     )
+
+
+def _estimated_cost(usage: openai.Usage) -> float:
+    """Conservative displayed estimate; usage remains the authoritative record."""
+    return round((usage.prompt_tokens * 5 + usage.completion_tokens * 15) / 1_000_000, 8)
 
 
 @router.post("", status_code=202)
@@ -82,6 +94,7 @@ async def upload_regulation(
     _admin: sqlite3.Row = Depends(require_admin),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    openai.require_configured()
     if document_kind not in _KINDS:
         raise ApiError(422, "validation_error", "Invalid document kind.")
     if not title.strip():

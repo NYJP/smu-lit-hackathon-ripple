@@ -29,6 +29,16 @@ def client(tmp_path, monkeypatch):
     this exercises the same path `python run.py dev` does.
     """
     monkeypatch.setenv("RIPPLE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    from api.services import openai
+
+    def fake_post(url, payload, _headers):
+        if url.endswith("/chat/completions"):
+            return {"choices": [{"message": {"content": '{\"requirements\": []}'}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+        vector = [1.0] + [0.0] * 1535
+        return {"data": [{"index": index, "embedding": vector} for index, _ in enumerate(payload["input"])], "usage": {"prompt_tokens": len(payload["input"]), "total_tokens": len(payload["input"])}}
+
+    monkeypatch.setattr(openai, "_post_json", fake_post)
     with TestClient(app) as test_client:
         yield test_client
 

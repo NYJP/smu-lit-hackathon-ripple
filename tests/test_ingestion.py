@@ -29,11 +29,15 @@ def test_regulation_pdf_is_ingested_ready_with_no_requirements(client, conn, use
     created = response.json()
     job = client.get(f"/api/v1/jobs/{created['job_id']}")
     assert job.status_code == 200
-    assert job.json() == {
+    body = job.json()
+    assert {key: body[key] for key in ("id", "job_type", "status", "progress", "step", "error_message")} == {
         "id": created["job_id"], "job_type": "regulation_ingest", "status": "succeeded",
         "progress": 1.0, "step": "Ready", "error_message": None,
-        "result": {"page_count": 1, "requirement_count": 0},
     }
+    assert body["result"]["page_count"] == 1
+    assert body["result"]["requirement_count"] == 0
+    assert body["result"]["token_usage"]["total_tokens"] == 2
+    assert body["result"]["estimated_cost_usd"] > 0
     regulation = conn.execute("SELECT status, page_count FROM regulations WHERE id = ?", (created["regulation_id"],)).fetchone()
     assert dict(regulation) == {"status": "ready", "page_count": 1}
     assert conn.execute("SELECT COUNT(*) AS c FROM regulatory_requirements").fetchone()["c"] == 0
