@@ -12,7 +12,7 @@ from api.access import require_admin
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, openai, parsing, retrieval, storage
+from api.services import jobs, mapping, openai, parsing, retrieval, storage
 
 router = APIRouter(prefix="/regulations", tags=["regulations"])
 
@@ -69,11 +69,28 @@ def _ingest_regulation(conn: sqlite3.Connection, job_id: str) -> None:
         conn.commit()
         jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
         return
+    mapping_result = mapping.MappingResult()
+    try:
+        # Only brand-new lineages are mapped here. New versions retain their
+        # lineage links and intentionally do not duplicate the mapping pass.
+        lineages = conn.execute(
+            "SELECT id FROM requirement_lineages WHERE origin_regulation_id = ? AND current_version_id IS NOT NULL",
+            (regulation_id,),
+        ).fetchall()
+        for lineage in lineages:
+            mapping_result = mapping_result.add(mapping.map_lineage(conn, lineage["id"]))
+    except openai.ExternalServiceError as exc:
+        message = str(exc)
+        conn.execute("UPDATE regulations SET status = 'failed', error_message = ? WHERE id = ?", (message, regulation_id))
+        conn.commit()
+        jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
+        return
+    usage = usage.add(mapping_result.usage)
     conn.execute("UPDATE regulations SET page_count = ?, status = 'ready', error_message = NULL WHERE id = ?", (parsed.page_count, regulation_id))
     conn.commit()
     jobs.update_job(
         conn, job_id, status="succeeded", progress=1, step="Ready",
-        result={"page_count": parsed.page_count, "requirement_count": requirement_count, "token_usage": usage.as_dict(), "estimated_cost_usd": _estimated_cost(usage)},
+        result={"page_count": parsed.page_count, "requirement_count": requirement_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "token_usage": usage.as_dict(), "estimated_cost_usd": _estimated_cost(usage)},
     )
 
 

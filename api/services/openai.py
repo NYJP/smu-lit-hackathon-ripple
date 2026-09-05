@@ -86,13 +86,20 @@ def _request(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
-def structured_completion(system: str, user: str, schema: dict[str, Any]) -> tuple[dict[str, Any], Usage]:
+def structured_completion(
+    system: str,
+    user: str,
+    schema: dict[str, Any],
+    *,
+    model: str | None = None,
+    schema_name: str = "requirements",
+) -> tuple[dict[str, Any], Usage]:
     payload = _request(
         "/chat/completions",
         {
-            "model": os.environ.get("RIPPLE_REASONING_MODEL", "gpt-5"),
+            "model": model or os.environ.get("RIPPLE_REASONING_MODEL", "gpt-5"),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "response_format": {"type": "json_schema", "json_schema": {"name": "requirements", "strict": True, "schema": schema}},
+            "response_format": {"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}},
             "max_completion_tokens": 12000,
         },
     )

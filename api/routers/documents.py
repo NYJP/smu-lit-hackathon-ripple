@@ -14,7 +14,7 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import jobs, openai, parsing, retrieval, storage
+from api.services import jobs, mapping, openai, parsing, retrieval, storage
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -118,7 +118,17 @@ def _ingest_document(conn: sqlite3.Connection, job_id: str) -> None:
         conn.commit()
         jobs.update_job(conn, job_id, status="failed", progress=1, step="Failed", error_message=message)
         return
-    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="Ready", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count, "unembedded_count": unembedded_count, "token_usage": embedding_usage.as_dict(), "estimated_cost_usd": round(embedding_usage.total_tokens * 0.02 / 1_000_000, 8)})
+    mapping_result = mapping.MappingResult()
+    mapping_error = None
+    try:
+        jobs.update_job(conn, job_id, progress=0.85, step="Mapping dependencies")
+        mapping_result = mapping.map_document(conn, document_id)
+    except openai.ExternalServiceError as exc:
+        # Parsed content remains available even if dependency analysis cannot
+        # complete; the mapping gap can be safely retried by the scan wave.
+        mapping_error = str(exc)
+    usage = embedding_usage.add(mapping_result.usage)
+    jobs.update_job(conn, job_id, status="succeeded", progress=1, step="Ready", result={"chunk_count": len(parsed.chunks), "page_count": parsed.page_count, "unembedded_count": unembedded_count, "dependencies_added": mapping_result.dependencies_added, "mapping_candidates_seen": mapping_result.candidates_seen, "mapping_error": mapping_error, "token_usage": usage.as_dict(), "estimated_cost_usd": round(usage.total_tokens * 0.02 / 1_000_000, 8)})
 
 
 @router.post("", status_code=202)
@@ -221,7 +231,21 @@ def document_coverage(document_id: str, conn: sqlite3.Connection = Depends(get_d
     access.require_visible_document(conn, user, document_id)
     counts = conn.execute("SELECT COUNT(*) AS checked, COALESCE(SUM(dependency_found), 0) AS found, MAX(mapped_at) AS last_pass_at FROM mapping_passes WHERE document_id = ?", (document_id,)).fetchone()
     total = conn.execute("SELECT COUNT(*) AS total FROM requirement_lineages").fetchone()["total"]
-    return {"requirements_checked": counts["checked"], "dependencies_found": counts["found"], "last_pass_at": counts["last_pass_at"], "unchecked_lineage_count": total - counts["checked"], "by_regulation": []}
+    regulations = conn.execute(
+        """SELECT r.id AS regulation_id, r.title, COUNT(l.id) AS requirements_total,
+                  COALESCE(SUM(CASE WHEN p.document_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS requirements_checked,
+                  COALESCE(SUM(CASE WHEN p.dependency_found = 1 THEN 1 ELSE 0 END), 0) AS dependencies_found
+           FROM regulations r
+           JOIN requirement_lineages l ON l.origin_regulation_id = r.id
+           LEFT JOIN mapping_passes p ON p.lineage_id = l.id AND p.document_id = ?
+           GROUP BY r.id, r.title ORDER BY r.title COLLATE NOCASE""",
+        (document_id,),
+    ).fetchall()
+    return {
+        "requirements_checked": counts["checked"], "dependencies_found": counts["found"],
+        "last_pass_at": counts["last_pass_at"], "unchecked_lineage_count": max(0, total - counts["checked"]),
+        "by_regulation": [dict(row) for row in regulations],
+    }
 
 
 @router.post("/{document_id}/collaborators")

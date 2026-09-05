@@ -27,13 +27,15 @@ def list_requirements(
     limit: int = 50,
     cursor: str | None = None,
     conn: sqlite3.Connection = Depends(get_db),
-    _user: sqlite3.Row = Depends(get_current_user),
+    user: sqlite3.Row = Depends(get_current_user),
 ):
     if not 1 <= limit <= 200:
         raise ApiError(422, "validation_error", "limit must be between 1 and 200.")
+    visible = access.visible_document_ids(conn, user)
+    dependency_scope = "0 = 1" if not visible else f"d.document_id IN ({','.join('?' * len(visible))})"
     rows = conn.execute(
         """SELECT q.*, l.public_ref,
-                  (SELECT COUNT(*) FROM dependencies d WHERE d.lineage_id = l.id AND d.status = 'active') AS dependency_count
+                  (SELECT COUNT(*) FROM dependencies d WHERE d.lineage_id = l.id AND d.status = 'active' AND """ + dependency_scope + """) AS dependency_count
            FROM regulatory_requirements q JOIN requirement_lineages l ON l.id = q.lineage_id
            WHERE q.is_current = 1
              AND (? IS NULL OR q.regulation_id = ?)
@@ -41,7 +43,7 @@ def list_requirements(
              AND (? IS NULL OR q.requirement_text LIKE '%' || ? || '%' OR q.subject LIKE '%' || ? || '%')
              AND (? IS NULL OR q.created_at < ?)
            ORDER BY q.created_at DESC, q.id DESC LIMIT ?""",
-        (regulation_id, regulation_id, requirement_type, requirement_type, q, q, q, cursor, cursor, limit + 1),
+        [*visible, regulation_id, regulation_id, requirement_type, requirement_type, q, q, q, cursor, cursor, limit + 1] if visible else (regulation_id, regulation_id, requirement_type, requirement_type, q, q, q, cursor, cursor, limit + 1),
     ).fetchall()
     more = len(rows) > limit
     rows = rows[:limit]
