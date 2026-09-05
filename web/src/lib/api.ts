@@ -20,6 +20,10 @@ import type { ApiErrorBody } from "./types";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 /** Thrown for every non-2xx response, carrying the section 9 error envelope. */
 export class ApiRequestError extends Error {
   readonly status: number;

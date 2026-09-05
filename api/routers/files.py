@@ -20,6 +20,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 def get_file(
     kind: str,
     file_id: str,
+    inline: bool = False,
     conn: sqlite3.Connection = Depends(get_db),
     user: sqlite3.Row = Depends(get_current_user),
 ):
@@ -37,4 +38,8 @@ def get_file(
     path = storage.absolute_path(row["file_path"])
     if not path.is_file():
         raise ApiError(404, "not_found", "File not found.")
-    return FileResponse(path, media_type=media_type, filename=row["file_name"])
+    headers = None
+    if inline and media_type == "application/pdf":
+        safe_name = row["file_name"].replace('"', "")
+        headers = {"Content-Disposition": f'inline; filename="{safe_name}"'}
+    return FileResponse(path, media_type=media_type, filename=row["file_name"], headers=headers)
