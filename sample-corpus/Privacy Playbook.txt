@@ -1,0 +1,10 @@
+Privacy Playbook
+
+1 Purpose
+This playbook gives product and support teams practical privacy controls.
+
+4 Customer Record Retention
+Keep customer account records, support conversations, and verification evidence for 5 years after account closure. When the period ends, submit a deletion request unless Legal has placed the record on hold.
+
+5 Breach Escalation
+Escalate confirmed material personal-data breaches to the Privacy Office immediately.
