@@ -86,7 +86,7 @@ def get_requirement(
     if visible:
         placeholders = ",".join("?" * len(visible))
         rows = conn.execute(
-            f"""SELECT d.id AS dependency_id, d.document_id, doc.name AS document_name, c.section_path, c.page_number,
+            f"""SELECT d.id AS dependency_id, d.document_id, d.document_chunk_id, doc.name AS document_name, c.section_path, c.page_number,
                        c.content AS excerpt, d.evidence_span, d.evidence_start, d.evidence_end, d.relationship_type, d.confidence
                 FROM dependencies d JOIN documents doc ON doc.id = d.document_id JOIN document_chunks c ON c.id = d.document_chunk_id
                 WHERE d.lineage_id = ? AND d.status = 'active' AND d.document_id IN ({placeholders})""",

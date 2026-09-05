@@ -41,5 +41,17 @@ def get_graph(change_id: str | None = None, regulation_id: str | None = None, do
         if level == "section":
             target = f"sec:{row['document_chunk_id']}"
             nodes.setdefault(target, {"id": target, "kind": "section", "parent": doc_id, "label": row["section_path"] or row["name"], "page": row["page_number"], "state": state})
-        edges.append({"id": row["id"], "source": req_id, "target": target, "relationship_type": row["relationship_type"], "confidence": row["confidence"]})
+        edges.append({
+            "id": row["id"],
+            "source": req_id,
+            "target": target,
+            "relationship_type": row["relationship_type"],
+            "confidence": row["confidence"],
+            "lineage_id": row["lineage_id"],
+            "document_id": row["document_id"],
+            "document_chunk_id": row["document_chunk_id"],
+            "evidence_start": row["evidence_start"],
+            "evidence_end": row["evidence_end"],
+            "page_number": row["page_number"],
+        })
     return {"nodes": list(nodes.values()), "edges": edges, "hidden_document_count": 0}
