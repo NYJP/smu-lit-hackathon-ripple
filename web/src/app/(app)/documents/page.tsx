@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { DocumentsPageContent } from "@/components/documents-page";
 
 export default function DocumentsPage() {
-  return <NotBuiltYet title="Documents" endpoint="/documents" />;
+  return <DocumentsPageContent />;
 }

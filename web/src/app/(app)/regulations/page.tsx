@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { RegulationsPageContent } from "@/components/regulations-page";
 
 export default function RegulationsPage() {
-  return <NotBuiltYet title="Regulations" endpoint="/regulations" />;
+  return <RegulationsPageContent />;
 }
