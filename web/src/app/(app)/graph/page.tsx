@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { GraphView } from "@/components/insights-page";
 
 export default function GraphPage() {
-  return <NotBuiltYet title="Graph" endpoint="/graph" />;
+  return <GraphView />;
 }

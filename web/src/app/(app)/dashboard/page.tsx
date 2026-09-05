@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { DashboardView } from "@/components/insights-page";
 
 export default function DashboardPage() {
-  return <NotBuiltYet title="Dashboard" endpoint="/dashboard" />;
+  return <DashboardView />;
 }
