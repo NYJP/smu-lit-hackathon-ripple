@@ -119,16 +119,19 @@ def health() -> dict:
         conn = db.get_connection()
         try:
             conn.execute("SELECT 1")
-            db_status = "ok"
+            schema = db.completion_schema_status(conn)
+            db_status = "ok" if schema["status"] == "ok" else "error"
         finally:
             conn.close()
     except Exception:
         logger.exception("Health check could not open the database")
         db_status = "error"
+        schema = {"status": "error", "missing_tables": [], "missing_columns": {}}
 
     return {
         "status": "ok" if db_status == "ok" else "error",
         "db": db_status,
+        "schema": schema,
         "openai": openai.status(),
         "embedding_dims": db.EMBEDDING_DIMS,
     }

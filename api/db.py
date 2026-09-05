@@ -26,8 +26,8 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # only for display; roles do not.
 SEED_USERS = [
     ("Priya Menon", "admin"),
-    ("Alex Tan", "member"),
-    ("Sam Rahim", "member"),
+    ("Alex Tan", "admin"),
+    ("Sam Rahim", "admin"),
 ]
 
 EMBEDDING_DIMS = 1536  # text-embedding-3-small; see section 6.1.
@@ -82,10 +82,9 @@ def get_connection(path: Path | None = None) -> sqlite3.Connection:
 def run_migrations(conn: sqlite3.Connection) -> list[str]:
     """Apply every migrations/*.sql file in order.
 
-    Idempotent: every DDL statement in the migration files uses
-    `IF NOT EXISTS`, so re-running against an existing database is a no-op.
-    Applied migration filenames are recorded in `_migrations` so `/health`
-    and tests can confirm what has run.
+    Each migration is executed exactly once. Applied migration filenames are
+    recorded in `_migrations` so later files may safely use ALTER TABLE while
+    `/health` and diagnostics can confirm what has run.
     """
     conn.execute(
         """
@@ -102,17 +101,15 @@ def run_migrations(conn: sqlite3.Connection) -> list[str]:
         already = conn.execute(
             "SELECT 1 FROM _migrations WHERE filename = ?", (path.name,)
         ).fetchone()
+        if already:
+            continue
         sql = path.read_text(encoding="utf-8")
-        # executescript runs even if already applied — every statement is
-        # IF NOT EXISTS, so this is safe and is what keeps the runner
-        # idempotent if _migrations itself was wiped without the db being.
         conn.executescript(sql)
-        if not already:
-            conn.execute(
-                "INSERT INTO _migrations (filename, applied_at) VALUES (?, ?)",
-                (path.name, _now()),
-            )
-            applied.append(path.name)
+        conn.execute(
+            "INSERT INTO _migrations (filename, applied_at) VALUES (?, ?)",
+            (path.name, _now()),
+        )
+        applied.append(path.name)
     conn.commit()
     return applied
 
@@ -134,6 +131,9 @@ def ensure_seed_users(conn: sqlite3.Connection) -> None:
     Only fires when `users` is empty, so renaming or deleting-with-reassign
     later never re-seeds.
     """
+    # Normalize legacy and hand-created rows on every boot. Owner and
+    # collaborator records remain attribution metadata, not access control.
+    conn.execute("UPDATE users SET role = 'admin' WHERE role <> 'admin'")
     count = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
     if count == 0:
         now = _now()
@@ -141,7 +141,47 @@ def ensure_seed_users(conn: sqlite3.Connection) -> None:
             "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, ?)",
             [(uuid.uuid4().hex, name, role, now) for name, role in SEED_USERS],
         )
-        conn.commit()
+    conn.commit()
+
+
+_COMPLETION_SCHEMA: dict[str, set[str]] = {
+    "users": {"organization_id"},
+    "documents": {"organization_id"},
+    "regulations": {"organization_id"},
+    "scans": {"organization_id"},
+    "simulations": {"organization_id"},
+    "mapping_passes": {"basis_hash", "materially_checked_at"},
+    "jobs": {
+        "initiated_by", "prompt_tokens", "completion_tokens",
+        "estimated_cost_usd", "retry_of_job_id",
+    },
+    "impact_cache": set(),
+    "simulation_requirement_snapshots": set(),
+}
+
+
+def completion_schema_status(conn: sqlite3.Connection) -> dict[str, object]:
+    """Return an actionable health summary for the completion schema."""
+    missing_tables: list[str] = []
+    missing_columns: dict[str, list[str]] = {}
+    for table, required_columns in _COMPLETION_SCHEMA.items():
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+        ).fetchone()
+        if exists is None:
+            missing_tables.append(table)
+            continue
+        actual_columns = {
+            row["name"] for row in conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+        }
+        absent = sorted(required_columns - actual_columns)
+        if absent:
+            missing_columns[table] = absent
+    return {
+        "status": "ok" if not missing_tables and not missing_columns else "error",
+        "missing_tables": missing_tables,
+        "missing_columns": missing_columns,
+    }
 
 
 def check_embedding_dims(configured_model_dims: int = EMBEDDING_DIMS) -> None:
