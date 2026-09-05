@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { ScansPageContent } from "@/components/scans-page";
 
 export default function ScansPage() {
-  return <NotBuiltYet title="Scans" endpoint="/scans" />;
+  return <ScansPageContent />;
 }

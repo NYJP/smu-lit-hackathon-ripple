@@ -50,9 +50,9 @@ def analyse_change(conn: sqlite3.Connection, change_id: str) -> int:
     if change is None:
         return 0
     rows = conn.execute(
-        """SELECT d.*, c.content, dep.relationship_type FROM dependencies dep
+        """SELECT dep.id AS dependency_id, dep.document_id, dep.document_chunk_id,
+                  dep.relationship_type, c.content FROM dependencies dep
            JOIN document_chunks c ON c.id = dep.document_chunk_id
-           JOIN documents d ON d.id = dep.document_id
            WHERE dep.lineage_id = ? AND dep.status = 'active'""", (change["lineage_id"],)
     ).fetchall()
     created = 0
@@ -60,10 +60,9 @@ def analyse_change(conn: sqlite3.Connection, change_id: str) -> int:
         level, reason, span, start, end = classify(row["content"], change["old_value"], change["new_value"], row["relationship_type"])
         conn.execute(
             """INSERT INTO impacts (id, regulatory_change_id, dependency_id, document_id, document_chunk_id, impact_level, confidence, reason, conflicting_span, conflicting_start, conflicting_end, created_at)
-               SELECT ?, ?, dep.id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM dependencies dep
-               WHERE dep.lineage_id = ? AND dep.document_chunk_id = ?
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(regulatory_change_id, dependency_id) DO UPDATE SET impact_level=excluded.impact_level, confidence=excluded.confidence, reason=excluded.reason, conflicting_span=excluded.conflicting_span, conflicting_start=excluded.conflicting_start, conflicting_end=excluded.conflicting_end""",
-            (uuid.uuid4().hex, change_id, row["id"], row["id"], level, 0.95 if level == "high" else 0.75, reason, span, start, end, _now(), change["lineage_id"], row["id"]),
+            (uuid.uuid4().hex, change_id, row["dependency_id"], row["document_id"], row["document_chunk_id"], level, 0.95 if level == "high" else 0.75, reason, span, start, end, _now()),
         )
         created += 1
     conn.execute("UPDATE regulatory_changes SET analysis_status = 'complete' WHERE id = ?", (change_id,))

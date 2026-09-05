@@ -12,8 +12,10 @@ import { useSession } from "@/lib/session-context";
 const PRIMARY_LINKS = [
   { href: "/documents", label: "Documents" },
   { href: "/regulations", label: "Regulations" },
+  { href: "/requirements", label: "Requirements" },
   { href: "/changes", label: "Changes" },
   { href: "/graph", label: "Graph" },
+  { href: "/scans", label: "Scans" },
   { href: "/search", label: "Search" },
 ] as const;
 
