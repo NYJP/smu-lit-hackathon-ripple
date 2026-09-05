@@ -13,6 +13,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def change_fields(previous: sqlite3.Row | None, proposed: dict, op: str = "modify") -> tuple[str, str | None, str | None, str]:
+    """Classify a transition without persisting the proposed version."""
+    subject = str(proposed.get("subject") or (previous["subject"] if previous else "requirement")).replace("_", " ").title()
+    if op == "add":
+        return "added", None, proposed.get("value"), f"{subject}: added"
+    if op == "repeal":
+        return "removed", previous["value"] if previous else None, None, f"{subject}: removed"
+    old_value = previous["value"] if previous else None
+    new_value = proposed.get("value", old_value)
+    if old_value != new_value:
+        unit = proposed.get("value_unit", previous["value_unit"] if previous else None)
+        return ("duration" if unit in {"days", "months", "years"} else "threshold"), old_value, new_value, f"{subject}: {old_value or 'unspecified'} → {new_value or 'unspecified'}"
+    for key, kind in (("exception", "exception"), ("condition", "scope"), ("effective_date", "effective_date")):
+        if previous and proposed.get(key, previous[key]) != previous[key]:
+            return kind, previous[key], proposed.get(key), f"{subject}: {kind} changed"
+    if previous and proposed.get("requirement_text", previous["requirement_text"]) != previous["requirement_text"]:
+        return ("definition" if previous["requirement_type"] == "definition" else "obligation"), previous["requirement_text"], proposed.get("requirement_text"), f"{subject}: obligation changed"
+    return "editorial", None, None, f"{subject}: editorial update"
+
+
 def classify(content: str, old_value: str | None, new_value: str | None, relationship: str) -> tuple[str, str, str | None, int | None, int | None]:
     if old_value and old_value.casefold() in content.casefold():
         start = content.casefold().find(old_value.casefold())
