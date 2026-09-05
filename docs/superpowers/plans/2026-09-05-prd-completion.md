@@ -91,18 +91,18 @@
 - Modify: `api/services/mapping.py`
 - Modify: `api/services/jobs.py`
 
-- [ ] Replace direct `httpx` OpenAI calls with the official `openai` Python package. Keep one lazily constructed client and preserve the current `503 unavailable` response when the key is missing.
-- [ ] Define `OpenAIResult[T]` with `value`, `raw_response`, `prompt_tokens`, `completion_tokens`, and `estimated_cost_usd`. Make embedding and structured-completion helpers return this type.
-- [ ] Limit concurrent OpenAI calls with a process-wide bounded semaphore configured by `OPENAI_MAX_CONCURRENCY`, default `4`.
-- [ ] Retry `429` and `5xx` responses twice with exponential backoff and jitter. Retry a schema-invalid structured response once with the validation errors appended to the repair prompt. Raise an actionable `ApiError` after exhaustion.
-- [ ] Record raw failed structured responses in the owning job's `result_json.error_context`; do not store secrets or the API key.
-- [ ] Centralize model prices in `api/services/usage.py` and implement `estimate_cost(model, prompt_tokens, completion_tokens)`. Unknown models record tokens and a null cost.
-- [ ] Embed only non-heading chunks with normalized content length of at least 60 characters, using `section_path + "\n" + content` as the input. Keep heading rows available for outlines but out of vector search.
-- [ ] Assert that every embedding matches the configured sqlite-vec dimension before insertion. On mismatch, fail the job with the detected and expected dimensions and direct the operator to `python run.py reindex --dimensions N`.
-- [ ] Refactor document-first mapping to send one chunk with up to eight candidate requirements per structured-completion call. Bound retrieval candidates, isolate failed batches, and increment job usage after every successful call.
-- [ ] Reactivate a previously dismissed dependency only when a new mapping pass returns a materially different evidence span or relationship; otherwise preserve the dismissal and audit history.
-- [ ] Run `python -m compileall api` and manually perform one search plus one single-document mapping with the configured API key.
-- [ ] Commit with message `feat: harden OpenAI retrieval and mapping services`.
+- [x] Replace direct `httpx` OpenAI calls with the official `openai` Python package. Keep one lazily constructed client and preserve the current `503 unavailable` response when the key is missing.
+- [x] Define `OpenAIResult[T]` with `value`, `raw_response`, `prompt_tokens`, `completion_tokens`, and `estimated_cost_usd`. Make embedding and structured-completion helpers return this type.
+- [x] Limit concurrent OpenAI calls with a process-wide bounded semaphore configured by `OPENAI_MAX_CONCURRENCY`, default `4`.
+- [x] Retry `429` and `5xx` responses twice with exponential backoff and jitter. Retry a schema-invalid structured response once with the validation errors appended to the repair prompt. Raise an actionable `ApiError` after exhaustion.
+- [x] Record raw failed structured responses in the owning job's `result_json.error_context`; do not store secrets or the API key.
+- [x] Centralize model prices in `api/services/usage.py` and implement `estimate_cost(model, prompt_tokens, completion_tokens)`. Unknown models record tokens and a null cost.
+- [x] Embed only non-heading chunks with normalized content length of at least 60 characters, using `section_path + "\n" + content` as the input. Keep heading rows available for outlines but out of vector search.
+- [x] Assert that every embedding matches the configured sqlite-vec dimension before insertion. On mismatch, fail the job with the detected and expected dimensions and direct the operator to `python run.py reindex --dimensions N`.
+- [x] Refactor document-first mapping to send one chunk with up to eight candidate requirements per structured-completion call. Bound retrieval candidates, isolate failed batches, and increment job usage after every successful call.
+- [x] Reactivate a previously dismissed dependency only when a new mapping pass returns a materially different evidence span or relationship; otherwise preserve the dismissal and audit history.
+- [x] Run `python -m compileall api` and manually perform one search plus one single-document mapping with the configured API key.
+- [x] Commit with message `feat: harden OpenAI retrieval and mapping services`.
 
 ### Task 3: Complete change, impact, and recommendation domain behavior
 

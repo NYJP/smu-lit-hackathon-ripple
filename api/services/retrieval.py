@@ -113,9 +113,9 @@ def extract_requirements(conn: sqlite3.Connection, parsed: parsing.RegulationPar
     usage = openai.Usage()
     reference_text = "\n".join(f"{row['public_ref']} | {row['subject']} | {row['requirement_text']}" for row in references) or "(none)"
     for window in _windows(parsed):
-        payload, window_usage = openai.structured_completion(_EXTRACTION_SYSTEM, f"Existing subject references:\n{reference_text}\n\nRegulation text:\n{window}", _REQUIREMENT_SCHEMA)
-        usage = usage.add(window_usage)
-        for raw in payload.get("requirements", []):
+        completion = openai.structured_completion(_EXTRACTION_SYSTEM, f"Existing subject references:\n{reference_text}\n\nRegulation text:\n{window}", _REQUIREMENT_SCHEMA)
+        usage = usage.add(completion.usage)
+        for raw in completion.value.get("requirements", []):
             extracted.append(_canonical_requirement(raw, parsed.page_count))
     deduplicated: list[dict[str, Any]] = []
     seen: set[tuple[str, str | None]] = set()
@@ -124,8 +124,8 @@ def extract_requirements(conn: sqlite3.Connection, parsed: parsing.RegulationPar
         if key not in seen:
             seen.add(key)
             deduplicated.append(item)
-    vectors, embedding_usage = openai.embed([f"{item['requirement_text']} {item['verbatim_text'] or ''}" for item in deduplicated])
-    return [ExtractedRequirement(item, vector) for item, vector in zip(deduplicated, vectors)], usage.add(embedding_usage)
+    embedding = openai.embed([f"{item['requirement_text']} {item['verbatim_text'] or ''}" for item in deduplicated])
+    return [ExtractedRequirement(item, vector) for item, vector in zip(deduplicated, embedding.value)], usage.add(embedding.usage)
 
 
 def _candidate_rows(conn: sqlite3.Connection, amended_id: str | None) -> list[sqlite3.Row]:
@@ -203,9 +203,16 @@ def persist_requirements(conn: sqlite3.Connection, regulation_id: str, amends_re
 
 
 def embed_chunks(chunks: Iterable[Any]) -> tuple[dict[int, list[float]], openai.Usage]:
-    eligible = [chunk for chunk in chunks if chunk.chunk_type != "heading" and len(chunk.content) >= 60]
-    vectors, usage = openai.embed([f"{chunk.section_path or ''}\n{chunk.content}" for chunk in eligible])
-    return {chunk.ordinal: vector for chunk, vector in zip(eligible, vectors)}, usage
+    eligible = [
+        chunk for chunk in chunks
+        if chunk.chunk_type != "heading" and len(" ".join(chunk.content.split())) >= 60
+    ]
+    embedding = openai.embed([
+        f"{(chunk.section_path or '').strip()}\n{chunk.content.strip()}" for chunk in eligible
+    ])
+    return {
+        chunk.ordinal: vector for chunk, vector in zip(eligible, embedding.value)
+    }, embedding.usage
 
 
 def _fts_query(query: str) -> str:
@@ -230,8 +237,8 @@ def _vector_ids(conn: sqlite3.Connection, table: str, id_column: str, vector: li
 
 
 def search(conn: sqlite3.Connection, user: sqlite3.Row, query: str, scope: str, visible_document_ids: set[str]) -> dict[str, list[dict[str, Any]]]:
-    vectors, _usage = openai.embed([query])
-    vector = vectors[0]
+    embedding = openai.embed([query])
+    vector = embedding.value[0]
     fts = _fts_query(query)
     chunks: list[dict[str, Any]] = []
     requirements: list[dict[str, Any]] = []

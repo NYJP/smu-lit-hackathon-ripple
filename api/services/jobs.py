@@ -34,7 +34,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create_job(conn: sqlite3.Connection, job_type: str, subject_type: str, subject_id: str) -> str:
+def create_job(
+    conn: sqlite3.Connection,
+    job_type: str,
+    subject_type: str,
+    subject_id: str,
+    *,
+    initiated_by: str | None = None,
+) -> str:
     """Insert a `queued` job row and return its id. Call this synchronously,
     in the request handler, before scheduling the background task — the
     202 response's `job_id` must already exist in the table by the time the
@@ -43,13 +50,55 @@ def create_job(conn: sqlite3.Connection, job_type: str, subject_type: str, subje
     now = _now()
     conn.execute(
         """
-        INSERT INTO jobs (id, job_type, subject_type, subject_id, status, progress, step, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'queued', 0, 'Queued', ?, ?)
+        INSERT INTO jobs (
+          id, job_type, subject_type, subject_id, status, progress, step,
+          initiated_by, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, 'queued', 0, 'Queued', ?, ?, ?)
         """,
-        (job_id, job_type, subject_type, subject_id, now, now),
+        (job_id, job_type, subject_type, subject_id, initiated_by, now, now),
     )
     conn.commit()
     return job_id
+
+
+def add_usage(conn: sqlite3.Connection, job_id: str, usage: Any) -> None:
+    """Increment persisted usage after one successful external call."""
+    conn.execute(
+        """UPDATE jobs
+           SET prompt_tokens = prompt_tokens + ?,
+               completion_tokens = completion_tokens + ?,
+               estimated_cost_usd = CASE
+                 WHEN ? IS NULL THEN estimated_cost_usd
+                 ELSE COALESCE(estimated_cost_usd, 0) + ?
+               END,
+               updated_at = ?
+           WHERE id = ?""",
+        (
+            int(usage.prompt_tokens),
+            int(usage.completion_tokens),
+            usage.estimated_cost_usd,
+            usage.estimated_cost_usd,
+            _now(),
+            job_id,
+        ),
+    )
+    conn.commit()
+
+
+def append_error_context(
+    conn: sqlite3.Connection,
+    job_id: str,
+    context: dict[str, Any],
+) -> None:
+    """Append non-secret external failure context to a job result."""
+    row = conn.execute("SELECT result FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if row is None:
+        return
+    result = json.loads(row["result"]) if row["result"] else {}
+    errors = result.setdefault("error_context", [])
+    errors.append(context)
+    update_job(conn, job_id, result=result)
 
 
 def update_job(
@@ -118,6 +167,11 @@ def job_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "step": row["step"],
         "error_message": row["error_message"],
         "result": json.loads(result_raw) if result_raw else None,
+        "usage": {
+            "prompt_tokens": row["prompt_tokens"],
+            "completion_tokens": row["completion_tokens"],
+            "estimated_cost_usd": row["estimated_cost_usd"],
+        },
     }
 
 

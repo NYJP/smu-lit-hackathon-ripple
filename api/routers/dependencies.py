@@ -122,6 +122,26 @@ def patch_dependency(
 ):
     dependency = _visible_dependency(conn, user, dependency_id)
     access.require_document_write(conn, user, dependency["document_id"])
+    if payload.status != dependency["status"]:
+        conn.execute(
+            """INSERT INTO dependency_events
+               (id, dependency_id, event_type, previous_status, new_status,
+                previous_relationship_type, new_relationship_type,
+                previous_evidence_span, new_evidence_span, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                uuid.uuid4().hex,
+                dependency_id,
+                "dismissed" if payload.status == "dismissed" else "reactivated",
+                dependency["status"],
+                payload.status,
+                dependency["relationship_type"],
+                dependency["relationship_type"],
+                dependency["evidence_span"],
+                dependency["evidence_span"],
+                _now(),
+            ),
+        )
     conn.execute("UPDATE dependencies SET status = ? WHERE id = ?", (payload.status, dependency_id))
     conn.commit()
     return dict(conn.execute("SELECT * FROM dependencies WHERE id = ?", (dependency_id,)).fetchone())

@@ -157,6 +157,7 @@ _COMPLETION_SCHEMA: dict[str, set[str]] = {
     },
     "impact_cache": set(),
     "simulation_requirement_snapshots": set(),
+    "dependency_events": set(),
 }
 
 

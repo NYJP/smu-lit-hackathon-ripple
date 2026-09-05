@@ -199,19 +199,29 @@ def _seed_dependencies(conn: sqlite3.Connection, seeded: list[tuple[str, dict[st
     return created
 
 
-def _embed_environment(conn: sqlite3.Connection) -> tuple[int, dict[str, int]]:
-    chunks = conn.execute("SELECT id,content FROM document_chunks ORDER BY id").fetchall()
+def _embed_environment(conn: sqlite3.Connection) -> tuple[int, dict[str, Any]]:
+    chunks = conn.execute(
+        "SELECT id, content, section_path, chunk_type FROM document_chunks ORDER BY id"
+    ).fetchall()
+    eligible_chunks = [
+        row for row in chunks
+        if row["chunk_type"] != "heading" and len(" ".join(row["content"].split())) >= 60
+    ]
     requirements = conn.execute("SELECT id,requirement_text FROM regulatory_requirements ORDER BY id").fetchall()
-    texts = [row["content"] for row in chunks] + [row["requirement_text"] for row in requirements]
+    texts = [
+        f"{(row['section_path'] or '').strip()}\n{row['content'].strip()}" for row in eligible_chunks
+    ] + [row["requirement_text"] for row in requirements]
     try:
-        vectors, usage = openai.embed(texts)
+        embedding = openai.embed(texts)
     except openai.ExternalServiceError as exc:
         raise ApiError(502, "embedding_failed", str(exc)) from exc
-    for row, vector in zip(chunks, vectors[:len(chunks)], strict=True):
+    chunk_vectors = embedding.value[:len(eligible_chunks)]
+    requirement_vectors = embedding.value[len(eligible_chunks):]
+    for row, vector in zip(eligible_chunks, chunk_vectors, strict=True):
         conn.execute("INSERT INTO vec_chunks (chunk_id,embedding) VALUES (?,?)", (row["id"], sqlite_vec.serialize_float32(vector)))
-    for row, vector in zip(requirements, vectors[len(chunks):], strict=True):
+    for row, vector in zip(requirements, requirement_vectors, strict=True):
         conn.execute("INSERT INTO vec_requirements (requirement_id,embedding) VALUES (?,?)", (row["id"], sqlite_vec.serialize_float32(vector)))
-    return len(vectors), usage.as_dict()
+    return len(embedding.value), embedding.usage.as_dict()
 
 
 def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str, Any]:
