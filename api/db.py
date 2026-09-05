@@ -1,0 +1,188 @@
+"""Connection factory, sqlite-vec loading, and the migrations runner.
+
+PRD references: section 5.1 (SQLite, sqlite-vec, FTS5), section 5.2 (boot
+sequence), section 5.5 (three seeded accounts), section 6 (schema).
+
+This module is deliberately the only place that opens a raw sqlite3
+connection. Everything else goes through `get_connection()` so that WAL mode,
+`foreign_keys = ON`, and the sqlite-vec extension are guaranteed to be in
+effect everywhere.
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterator
+
+import sqlite_vec
+
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+# The three accounts every install boots with (section 5.5). Order matters
+# only for display; roles do not.
+SEED_USERS = [
+    ("Priya Menon", "admin"),
+    ("Alex Tan", "member"),
+    ("Sam Rahim", "member"),
+]
+
+EMBEDDING_DIMS = 1536  # text-embedding-3-small; see section 6.1.
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def data_dir() -> Path:
+    return Path(os.environ.get("RIPPLE_DATA_DIR", "./data")).resolve()
+
+
+def db_path() -> Path:
+    return data_dir() / "ripple.db"
+
+
+def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
+    """Load the sqlite-vec extension into an open connection.
+
+    Verified in isolation on Python 3.13.14 / Windows 11 before this module
+    was written: `sqlite3.Connection.enable_load_extension` is present in
+    this CPython build and `sqlite_vec.load()` succeeds. No fallback exists;
+    if this raises, the caller (main.py boot) should fail loudly rather than
+    silently degrade to keyword-only search.
+    """
+    conn.enable_load_extension(True)
+    try:
+        sqlite_vec.load(conn)
+    finally:
+        conn.enable_load_extension(False)
+
+
+def get_connection(path: Path | None = None) -> sqlite3.Connection:
+    """Open a new connection with WAL mode, foreign keys, and sqlite-vec.
+
+    A fresh connection is returned on every call rather than a shared
+    singleton — FastAPI's request lifecycle and BackgroundTasks jobs each
+    get their own, and sqlite3 connections are not safe to share across
+    threads without care.
+    """
+    target = path or db_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(target), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    _load_sqlite_vec(conn)
+    return conn
+
+
+def run_migrations(conn: sqlite3.Connection) -> list[str]:
+    """Apply every migrations/*.sql file in order.
+
+    Idempotent: every DDL statement in the migration files uses
+    `IF NOT EXISTS`, so re-running against an existing database is a no-op.
+    Applied migration filenames are recorded in `_migrations` so `/health`
+    and tests can confirm what has run.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS _migrations (
+          filename    TEXT PRIMARY KEY,
+          applied_at  TEXT NOT NULL
+        )
+        """
+    )
+    conn.commit()
+
+    applied: list[str] = []
+    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        already = conn.execute(
+            "SELECT 1 FROM _migrations WHERE filename = ?", (path.name,)
+        ).fetchone()
+        sql = path.read_text(encoding="utf-8")
+        # executescript runs even if already applied — every statement is
+        # IF NOT EXISTS, so this is safe and is what keeps the runner
+        # idempotent if _migrations itself was wiped without the db being.
+        conn.executescript(sql)
+        if not already:
+            conn.execute(
+                "INSERT INTO _migrations (filename, applied_at) VALUES (?, ?)",
+                (path.name, _now()),
+            )
+            applied.append(path.name)
+    conn.commit()
+    return applied
+
+
+def ensure_organization(conn: sqlite3.Connection) -> None:
+    """Insert the single organizations row if absent (section 6)."""
+    row = conn.execute("SELECT 1 FROM organizations LIMIT 1").fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO organizations (id, name, created_at) VALUES (?, ?, ?)",
+            (uuid.uuid4().hex, "Ripple", _now()),
+        )
+        conn.commit()
+
+
+def ensure_seed_users(conn: sqlite3.Connection) -> None:
+    """First-boot insert of the three default accounts (section 5.5).
+
+    Only fires when `users` is empty, so renaming or deleting-with-reassign
+    later never re-seeds.
+    """
+    count = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
+    if count == 0:
+        now = _now()
+        conn.executemany(
+            "INSERT INTO users (id, display_name, role, created_at) VALUES (?, ?, ?, ?)",
+            [(uuid.uuid4().hex, name, role, now) for name, role in SEED_USERS],
+        )
+        conn.commit()
+
+
+def check_embedding_dims(configured_model_dims: int = EMBEDDING_DIMS) -> None:
+    """Assert the configured embedding dimensionality matches the vec0 schema.
+
+    Section 6.1: "If the configured embedding model's dimensionality does
+    not match the vec0 declaration, the API MUST fail at boot with an
+    instruction to run scripts/reindex.py --dims N." The MVP hard-codes
+    text-embedding-3-small (1536 dims) as the only supported model this
+    wave, so this is a static assertion rather than a live API probe (no
+    OpenAI calls are made in this wave).
+    """
+    if configured_model_dims != EMBEDDING_DIMS:
+        raise RuntimeError(
+            f"Embedding dimensionality mismatch: configured model produces "
+            f"{configured_model_dims} dims but vec_chunks/vec_requirements "
+            f"are declared FLOAT[{EMBEDDING_DIMS}]. Run "
+            f"'python scripts/reindex.py --dims {configured_model_dims}' "
+            f"to rebuild the vector tables at the new dimensionality."
+        )
+
+
+def get_db() -> Iterator[sqlite3.Connection]:
+    """FastAPI dependency: one connection per request, closed afterwards."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def bootstrap(path: Path | None = None) -> sqlite3.Connection:
+    """Full boot sequence: create ./data, migrate, load sqlite-vec, seed.
+
+    Mirrors section 5.2 exactly (minus the OPENAI_API_KEY check and the
+    OpenAI-dims probe, which live in main.py since they are HTTP/startup
+    concerns, not storage concerns).
+    """
+    conn = get_connection(path)
+    run_migrations(conn)
+    check_embedding_dims()
+    ensure_organization(conn)
+    ensure_seed_users(conn)
+    return conn
