@@ -78,13 +78,15 @@ def test_document_docx_ingestion_writes_chunks_fts_and_scopes_collaborator(clien
     assert streamed.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
-def test_document_pdf_heading_page_and_offsets_are_source_faithful(client, conn, users):
-    """A PDF heading immediately followed by body text is a real section boundary."""
+def test_document_pdf_multpage_sections_keep_page_and_source_provenance(client, conn, users):
+    """Generated pages retain their own heading, path, and original offset range."""
     pdf = fitz.open()
-    page = pdf.new_page()
-    page.insert_text((72, 72), "Part I Retention")
-    page.insert_text((72, 88), "Customer records are retained for seven years.")
-    page.insert_text((72, 104), "They are kept in the archive for audit and retrieval purposes.")
+    retention_page = pdf.new_page()
+    retention_page.insert_text((72, 72), "Part I Retention")
+    retention_page.insert_text((72, 88), "Customer records are retained for seven years.")
+    access_page = pdf.new_page()
+    access_page.insert_text((72, 72), "Part II Access")
+    access_page.insert_text((72, 88), "Access logs are retained for seven years.")
     pdf_payload = pdf.tobytes()
     pdf.close()
     login_as(client, users["Alex Tan"]["id"])
@@ -102,9 +104,9 @@ def test_document_pdf_heading_page_and_offsets_are_source_faithful(client, conn,
         "FROM document_chunks WHERE document_id = ? ORDER BY ordinal",
         (document_id,),
     ).fetchall()
-    assert [chunk["chunk_type"] for chunk in chunks] == ["heading", "paragraph"]
-    assert chunks[1]["section_path"] == "Part I Retention"
-    assert chunks[0]["page_number"] == chunks[1]["page_number"] == 1
+    assert [chunk["chunk_type"] for chunk in chunks] == ["heading", "paragraph", "heading", "paragraph"]
+    assert [chunk["page_number"] for chunk in chunks] == [1, 1, 2, 2]
+    assert [chunk["section_path"] for chunk in chunks] == [None, "Part I Retention", "Part I Retention", "Part II Access"]
 
     stored = conn.execute("SELECT file_path FROM documents WHERE id = ?", (document_id,)).fetchone()
     original_extracted_text = "\n".join(parsing._extract_raw_pages(storage.absolute_path(stored["file_path"])))
@@ -112,8 +114,11 @@ def test_document_pdf_heading_page_and_offsets_are_source_faithful(client, conn,
         assert original_extracted_text[chunk["char_start"]:chunk["char_end"]] == chunk["content"]
 
 
-def test_document_txt_ingestion_preserves_section_and_original_offsets(client, conn, users):
-    source_text = "Part II Access\n\nAccess logs are retained for seven years."
+def test_document_txt_offsets_preserve_original_formatting(client, conn, users):
+    # The body deliberately has a newline and repeated spaces. The former
+    # normalized/reconstructed offset scheme could not make this source slice
+    # equal the stored content.
+    source_text = "Part II Access\n\nAccess logs are retained   for seven years,\nwith quarterly verification."
     login_as(client, users["Alex Tan"]["id"])
     response = client.post(
         "/api/v1/documents",
@@ -129,6 +134,8 @@ def test_document_txt_ingestion_preserves_section_and_original_offsets(client, c
     ).fetchall()
     assert [chunk["chunk_type"] for chunk in chunks] == ["heading", "paragraph"]
     assert chunks[1]["section_path"] == "Part II Access"
+    assert "   " in chunks[1]["content"]
+    assert "\n" in chunks[1]["content"]
     for chunk in chunks:
         assert source_text[chunk["char_start"]:chunk["char_end"]] == chunk["content"]
 
