@@ -152,7 +152,7 @@ python run.py test       # run the pytest suite
 python run.py reindex    # rebuild the vec_* and fts_* mirror tables
 ```
 
-`[DEFAULT]` **A single Python entrypoint, not a Makefile.** Python is already a hard dependency; GNU make is not present on a default Windows machine, and maintaining a Makefile plus PowerShell equivalents means writing every task twice and having them drift. `run.py` uses only the standard library (`argparse`, `subprocess`, `venv`, `pathlib`), runs identically on Windows, macOS, and Linux, and is the single place task automation lives. `dev` supervises both child processes and terminates both on Ctrl+C or on either one exiting. Every command prints what it is about to do before doing it, and fails with a readable message naming the fix — never a traceback as the primary error surface.
+`[DEFAULT]` **A single Python entrypoint, not a Makefile.** Python is already a hard dependency; GNU make is not present on a default Windows machine, and maintaining a Makefile plus PowerShell equivalents means writing every task twice and having them drift. `run.py` uses only the standard library (`argparse`, `subprocess`, `venv`, `pathlib`), runs identically on Windows, macOS, and Linux, and is the single place task automation lives. `dev` supervises both child processes and terminates both on Ctrl+C or on either one exiting. **On Windows this requires killing the process tree, not the child.** `npm run dev` runs through a `cmd.exe` wrapper which spawns node, which spawns further workers; none of those are owned by the handle Python holds, so `terminate()` reaps the wrapper and leaves the dev server holding its port. Use `taskkill /PID <pid> /T /F` on Windows and a process group elsewhere. A supervisor that half-works is worse than none, because the orphan is invisible until the next run fails to bind. Every command prints what it is about to do before doing it, and fails with a readable message naming the fix — never a traceback as the primary error surface.
 
 On boot the API MUST: create `./data/` if absent, run migrations, load `sqlite-vec`, and — if the `users` table is empty — insert the three default accounts from §5.5.
 
@@ -170,8 +170,12 @@ RIPPLE_REASONING_MODEL=gpt-4.1                # extraction, impact, recommendati
 RIPPLE_BULK_MODEL=gpt-4.1-mini                # dependency adjudication (high volume)
 RIPPLE_DATA_DIR=./data
 RIPPLE_MAX_CONCURRENT_LLM_CALLS=5
+RIPPLE_API_PORT=8000                          # dev machines collide; see below
+RIPPLE_WEB_ORIGIN=http://localhost:3000       # the single CORS allow_origins entry
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ```
+
+`[DEFAULT]` **The API port is configurable and `run.py` threads it everywhere.** A hard-coded 8000 is fragile: on a working developer machine that port is routinely taken by something unrelated, and the failure arrives as a bind error with no obvious remedy. `run.py dev` reads `RIPPLE_API_PORT`, passes it to uvicorn, and writes the matching `NEXT_PUBLIC_API_BASE_URL` into `web/.env.local` so the two halves cannot disagree. Never make the developer keep two ports in sync by hand.
 
 Model names are configuration, not hard-coded constants. `OPENAI_BASE_URL` exists so the whole system can be pointed at a local OpenAI-compatible server later without code changes; embedding dimensionality is read from the first successful embedding response and asserted against the schema on boot.
 
