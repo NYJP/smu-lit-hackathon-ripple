@@ -8,16 +8,34 @@ are open to every signed-in member.
 from __future__ import annotations
 
 import sqlite3
+import uuid
+from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from api import access
 from api.access import require_admin
 from api.auth import get_current_user
 from api.db import get_db
-from api.errors import ApiError, not_implemented
+from api.errors import ApiError
+from api.services import impact
 
 router = APIRouter(prefix="/requirements", tags=["requirements"])
+
+class RequirementPatch(BaseModel):
+    requirement_text: str | None = None
+    value: str | None = None
+    value_numeric: float | None = None
+    value_unit: str | None = None
+    comparator: str | None = None
+    condition: str | None = None
+    exception: str | None = None
+    subject: str | None = None
+    source_section: str | None = None
+    effective_date: str | None = None
+    propagate: bool = False
 
 @router.get("")
 def list_requirements(
@@ -80,10 +98,42 @@ def get_requirement(
 
 
 @router.patch("/{lineage_id}")
-def patch_requirement(lineage_id: str, _admin: sqlite3.Row = Depends(require_admin)):
-    not_implemented("a later requirement authoring wave")
+def patch_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.Connection = Depends(get_db), _admin: sqlite3.Row = Depends(require_admin)):
+    previous = conn.execute("SELECT q.* FROM requirement_lineages l JOIN regulatory_requirements q ON q.id=l.current_version_id WHERE l.id=?", (lineage_id,)).fetchone()
+    if previous is None:
+        raise ApiError(404, "not_found", "Requirement not found.")
+    data = dict(previous)
+    fields = ("requirement_text", "value", "value_numeric", "value_unit", "comparator", "condition", "exception", "subject", "source_section", "effective_date")
+    for field in fields:
+        value = getattr(payload, field)
+        if value is not None:
+            data[field] = value
+    requirement_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("UPDATE regulatory_requirements SET is_current=0, superseded_by=? WHERE id=?", (requirement_id, previous["id"]))
+    conn.execute("INSERT INTO regulatory_requirements (id,lineage_id,regulation_id,version,requirement_text,verbatim_text,requirement_type,subject,value,value_numeric,value_unit,comparator,condition,exception,source_section,source_page,effective_date,origin,is_current,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',1,?)", (requirement_id,lineage_id,previous["regulation_id"],previous["version"]+1,data["requirement_text"],previous["verbatim_text"],previous["requirement_type"],data["subject"],data["value"],data["value_numeric"],data["value_unit"],data["comparator"],data["condition"],data["exception"],data["source_section"],previous["source_page"],data["effective_date"],now))
+    conn.execute("UPDATE requirement_lineages SET current_version_id=?, subject=? WHERE id=?", (requirement_id, data["subject"], lineage_id))
+    change_id = None
+    if payload.propagate:
+        change_type, old_value, new_value, summary = impact.change_fields(previous, data)
+        if change_type != "editorial":
+            change_id = uuid.uuid4().hex
+            conn.execute("INSERT INTO regulatory_changes (id,lineage_id,source,previous_requirement_id,new_requirement_id,change_type,old_value,new_value,summary,source_section,effective_date,analysis_status,created_at) VALUES (?,?, 'manual',?,?,?,?,?,?,?,?, 'pending',?)", (change_id,lineage_id,previous["id"],requirement_id,change_type,old_value,new_value,summary,data["source_section"],data["effective_date"],now))
+    conn.commit()
+    if change_id:
+        impact.analyse_change(conn, change_id)
+    return {"requirement": dict(conn.execute("SELECT * FROM regulatory_requirements WHERE id=?", (requirement_id,)).fetchone()), "change_id": change_id, "job_id": None}
 
 
 @router.post("/{lineage_id}/simulate", status_code=202)
-def simulate_requirement(lineage_id: str, _user: sqlite3.Row = Depends(get_current_user)):
-    not_implemented("the impact engine wave (build order step 7)")
+def simulate_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
+    if conn.execute("SELECT 1 FROM requirement_lineages WHERE id=?", (lineage_id,)).fetchone() is None:
+        raise ApiError(404, "not_found", "Requirement not found.")
+    simulation_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("INSERT INTO simulations (id,created_by,name,status,created_at,updated_at) VALUES (?,?,?,'draft',?,?)", (simulation_id,user["id"],"Requirement what-if",now,now))
+    conn.execute("INSERT INTO simulation_edits (id,simulation_id,lineage_id,op,proposed_requirement_text,proposed_value,proposed_value_numeric,proposed_value_unit,proposed_comparator,proposed_condition,proposed_exception,proposed_effective_date,created_at) VALUES (?,?,?,'modify',?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex,simulation_id,lineage_id,payload.requirement_text,payload.value,payload.value_numeric,payload.value_unit,payload.comparator,payload.condition,payload.exception,payload.effective_date,now))
+    conn.commit()
+    from api.routers.simulations import run_simulation
+    run_simulation(simulation_id, conn, user)
+    return {"simulation_id": simulation_id, "job_id": None}
