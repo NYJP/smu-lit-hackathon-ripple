@@ -22,7 +22,7 @@ export function PrimaryNav() {
   const { user } = useSession();
 
   const links = user?.role === "admin"
-    ? [...PRIMARY_LINKS, { href: "/people", label: "People" } as const]
+    ? [...PRIMARY_LINKS, { href: "/people", label: "People" } as const, { href: "/settings", label: "Settings" } as const]
     : PRIMARY_LINKS;
 
   return (

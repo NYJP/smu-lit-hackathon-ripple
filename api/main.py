@@ -39,6 +39,7 @@ from api.routers import (
     requirements,
     scans,
     search,
+    settings,
     simulations,
     users as users_router,
 )
@@ -146,6 +147,7 @@ api_router.include_router(simulations.router)
 api_router.include_router(scans.router)
 api_router.include_router(graph.router)
 api_router.include_router(search.router)
+api_router.include_router(settings.router)
 api_router.include_router(jobs.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(files.router)
