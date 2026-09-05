@@ -1,0 +1,18 @@
+# Normalise line endings so Windows, macOS and Linux clones agree.
+# Without this, a teammate on another OS sees whole-file diffs caused by
+# nothing but CRLF/LF, which buries real changes during review.
+* text=auto eol=lf
+
+# Binary assets: never transform.
+*.pdf   binary
+*.docx  binary
+*.doc   binary
+*.xlsx  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.db    binary
