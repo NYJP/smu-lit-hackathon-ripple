@@ -6,7 +6,7 @@ import json
 
 import fitz
 
-from tests.conftest import login_as, make_document
+from tests.conftest import install_fake_openai, login_as, make_document
 
 
 def _pdf_bytes(text: str) -> bytes:
@@ -38,8 +38,6 @@ def _requirement(text: str, *, section: str = "Section 12", subject: str = "reco
 
 
 def _set_extract_response(monkeypatch, requirements: list[dict]) -> None:
-    from api.services import openai
-
     vector = [1.0] + [0.0] * 1535
 
     def fake_post(url: str, payload: dict, _headers: dict) -> dict:
@@ -54,7 +52,7 @@ def _set_extract_response(monkeypatch, requirements: list[dict]) -> None:
             "usage": {"prompt_tokens": len(payload["input"]), "total_tokens": len(payload["input"])},
         }
 
-    monkeypatch.setattr(openai, "_post_json", fake_post)
+    install_fake_openai(monkeypatch, fake_post)
 
 
 def _upload_regulation(client, title: str, text: str, **form: str):
@@ -142,12 +140,9 @@ def test_amendment_repeal_does_not_retire_same_section_from_another_regulation(c
 
 def test_search_fuses_retrieval_legs_and_hides_unshared_chunks(client, conn, users, monkeypatch):
     """Fail if retrieval returns a chunk belonging to a document the caller cannot see."""
-    from api.services import openai
-
     vector = [1.0] + [0.0] * 1535
-    monkeypatch.setattr(
-        openai,
-        "_post_json",
+    install_fake_openai(
+        monkeypatch,
         lambda _url, _payload, _headers: {"data": [{"index": 0, "embedding": vector}], "usage": {"prompt_tokens": 1, "total_tokens": 1}},
     )
     visible_document = make_document(conn, users["Alex Tan"]["id"], "Visible retention policy")

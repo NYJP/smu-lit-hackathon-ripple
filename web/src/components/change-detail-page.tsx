@@ -6,7 +6,12 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowUpRight, FileText, LoaderCircle, Scale } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ConfidenceMeter } from "@/components/ui/confidence-meter";
+import { SeverityBadge, SeverityCounts, SeverityRail } from "@/components/ui/severity-badge";
+import { SourceBadge, StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiRequestError } from "@/lib/api";
+import { bySeverityDesc, severityCounts } from "@/lib/severity";
+import type { ChangeSource, ChangeType, ReviewStatus, Severity } from "@/lib/types";
 
 type Requirement = {
   requirement_text: string;
@@ -20,8 +25,8 @@ type ChangeDetail = {
   change: {
     id: string;
     summary: string;
-    change_type: string;
-    source: string;
+    change_type: ChangeType;
+    source: ChangeSource;
     source_section: string | null;
     effective_date: string | null;
     analysis_status: string;
@@ -44,9 +49,12 @@ type ChangeDetail = {
 type Impact = {
   impact_id: string;
   impact_level: string;
+  /** Derived server-side; may escalate a stored `high` to `critical`. */
+  severity: Severity;
   confidence: number;
   reason: string;
-  review_status: string;
+  review_status: ReviewStatus;
+  review_status_label: string;
   conflicting_start: number | null;
   conflicting_end: number | null;
   document_id: string;
@@ -89,7 +97,13 @@ export function ChangeDetailPage() {
       api.get<{ items: Impact[] }>(`/changes/${params.id}/impacts?limit=200`),
     ]).then(([change, result]) => {
       setData(change);
-      setImpacts(result.items.filter((impact) => impact.impact_level !== "none"));
+      // `none` rows are the record that the dependency was checked (PRD
+      // section 8.3); the list shows only findings, worst first.
+      setImpacts(
+        result.items
+          .filter((impact) => impact.impact_level !== "none")
+          .sort(bySeverityDesc((impact) => impact.severity)),
+      );
     }).catch((err) => setError(err instanceof ApiRequestError ? err.message : "Could not load this regulatory change."));
   }, [params.id]);
 
@@ -102,7 +116,7 @@ export function ChangeDetailPage() {
     <Link href="/changes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Regulatory changes</Link>
 
     <div className="mt-5">
-      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="capitalize">{data.change.change_type.replaceAll("_", " ")}</Badge><Badge variant="secondary" className="capitalize">{data.change.analysis_status}</Badge></div>
+      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="capitalize">{data.change.change_type.replaceAll("_", " ")}</Badge><Badge variant="secondary" className="capitalize">{data.change.analysis_status}</Badge><SourceBadge source={data.change.source} /></div>
       <h1 className="mt-3 max-w-4xl text-2xl font-semibold tracking-tight">{data.change.summary}</h1>
       <p className="mt-2 text-sm text-muted-foreground">{data.change.source_section ?? "Source section unavailable"}{data.change.effective_date ? ` · Effective ${data.change.effective_date}` : ""}</p>
     </div>
@@ -115,12 +129,20 @@ export function ChangeDetailPage() {
     </section>
 
     <section className="mt-8">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-medium">Affected documents</h2><div className="flex items-center gap-2"><Badge variant="destructive">{affectedCount} affected passages</Badge><span className="text-sm text-muted-foreground">{data.affected_documents.length} documents</span></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-medium">Affected documents</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <SeverityCounts counts={severityCounts(impacts, (item) => item.severity)} />
+          <span className="text-sm text-muted-foreground">{affectedCount} passages across {data.affected_documents.length} documents</span>
+        </div>
+      </div>
       <div className="mt-3 divide-y rounded-lg border">
         {impacts.length ? impacts.map((impact) => <Link key={impact.impact_id} href={passageHref(impact)} className="group flex gap-4 p-4 transition-colors hover:bg-muted/40">
-          <FileText className="mt-0.5 size-5 shrink-0 text-destructive" />
+          <SeverityRail severity={impact.severity} className="self-stretch" />
+          <FileText className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium group-hover:underline">{impact.document_name}</p><p className="mt-1 text-xs text-muted-foreground">Affected sentence written by {impact.contributor?.display_name ?? impact.owner_name}{impact.section_path ? ` · ${impact.section_path}` : ""}{impact.page_number ? ` · page ${impact.page_number}` : ""}</p></div><div className="flex items-center gap-2"><Badge variant="destructive" className="capitalize">{impact.impact_level} impact</Badge><span className="text-xs text-muted-foreground">{Math.round(impact.confidence * 100)}%</span><ArrowUpRight className="size-4 text-muted-foreground" /></div></div>
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium group-hover:underline">{impact.document_name}</p><p className="mt-1 text-xs text-muted-foreground">Affected sentence written by {impact.contributor?.display_name ?? impact.owner_name}{impact.section_path ? ` · ${impact.section_path}` : ""}{impact.page_number ? ` · page ${impact.page_number}` : ""}</p></div><div className="flex flex-wrap items-center justify-end gap-2"><SeverityBadge severity={impact.severity} withNoun /><StatusBadge status={impact.review_status} label={impact.review_status_label} /><ArrowUpRight className="size-4 text-muted-foreground" /></div></div>
+            <ConfidenceMeter className="mt-2" confidence={impact.confidence} severity={impact.severity} />
             <p className="mt-3 text-sm leading-6">{impact.reason}</p>
             <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{impact.chunk_content}</p>
           </div>

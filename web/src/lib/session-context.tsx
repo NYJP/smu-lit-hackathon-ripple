@@ -26,6 +26,8 @@ interface SessionContextValue {
   roster: RosterUser[];
   /** True until the first /auth/me + /users round trip resolves. */
   loading: boolean;
+  /** Changes whenever the active account changes so page data can refetch in place. */
+  revision: number;
   /** Chooses an account and makes it the session. Used by /who and the switcher. */
   chooseAccount: (userId: string) => Promise<void>;
   /** Re-fetches the roster, e.g. after /people adds or edits someone. */
@@ -38,6 +40,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<MeUser | null>(null);
   const [roster, setRoster] = useState<RosterUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
 
   const refreshRoster = useCallback(async () => {
     const res = await api.get<UsersListResponse>("/users");
@@ -75,10 +78,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const chooseAccount = useCallback(async (userId: string) => {
     const res = await api.post<SessionResponse>("/auth/session", { user_id: userId });
     setUser(res.user);
+    setRevision((value) => value + 1);
   }, []);
 
   return (
-    <SessionContext.Provider value={{ user, roster, loading, chooseAccount, refreshRoster }}>
+    <SessionContext.Provider value={{ user, roster, loading, revision, chooseAccount, refreshRoster }}>
       {children}
     </SessionContext.Provider>
   );

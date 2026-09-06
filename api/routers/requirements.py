@@ -148,7 +148,7 @@ def patch_requirement(
 
 
 @router.post("/{lineage_id}/simulate", status_code=202)
-def simulate_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
+def simulate_requirement(lineage_id: str, payload: RequirementPatch, background_tasks: BackgroundTasks, conn: sqlite3.Connection = Depends(get_db), user: sqlite3.Row = Depends(get_current_user)):
     if conn.execute("SELECT 1 FROM requirement_lineages WHERE id=?", (lineage_id,)).fetchone() is None:
         raise ApiError(404, "not_found", "Requirement not found.")
     simulation_id = uuid.uuid4().hex
@@ -156,6 +156,8 @@ def simulate_requirement(lineage_id: str, payload: RequirementPatch, conn: sqlit
     conn.execute("INSERT INTO simulations (id,created_by,name,status,created_at,updated_at) VALUES (?,?,?,'draft',?,?)", (simulation_id,user["id"],"Requirement what-if",now,now))
     conn.execute("INSERT INTO simulation_edits (id,simulation_id,lineage_id,op,proposed_requirement_text,proposed_value,proposed_value_numeric,proposed_value_unit,proposed_comparator,proposed_condition,proposed_exception,proposed_effective_date,created_at) VALUES (?,?,?,'modify',?,?,?,?,?,?,?,?,?)", (uuid.uuid4().hex,simulation_id,lineage_id,payload.requirement_text,payload.value,payload.value_numeric,payload.value_unit,payload.comparator,payload.condition,payload.exception,payload.effective_date,now))
     conn.commit()
-    from api.routers.simulations import run_simulation
-    run_simulation(simulation_id, conn, user)
-    return {"simulation_id": simulation_id, "job_id": None}
+    job_id = jobs.create_job(conn, "simulation_run", "simulation", simulation_id,
+                             initiated_by=user["id"], input_payload={"simulation_id": simulation_id})
+    from api.services.simulations import run_simulation_job
+    jobs.run_job(background_tasks, get_connection, job_id, run_simulation_job)
+    return {"simulation_id": simulation_id, "job_id": job_id}

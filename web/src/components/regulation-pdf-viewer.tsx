@@ -150,12 +150,12 @@ export function RegulationPdfViewer({ src, title, quotation, preferredPage }: { 
       <div className="flex items-center gap-2 text-sm"><Search className="size-4" />{matchState === "searching" ? "Locating cited clause…" : matchState === "matched" ? `Referenced clause highlighted on page ${match?.page}` : "Referenced clause could not be located in the PDF text"}</div>
       <div className="flex items-center gap-2"><Button type="button" size="icon-sm" variant="outline" aria-label="Previous PDF page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}><ChevronLeft /></Button><span className="min-w-20 text-center text-xs text-muted-foreground">Page {pageNumber}{pageCount ? ` of ${pageCount}` : ""}</span><Button type="button" size="icon-sm" variant="outline" aria-label="Next PDF page" disabled={!pageCount || pageNumber >= pageCount} onClick={() => setPageNumber((page) => page + 1)}><ChevronRight /></Button></div>
     </div>
-    {matchState === "unmatched" && quotation ? <div className="border-b border-yellow-300 bg-yellow-50 p-4 text-sm dark:border-yellow-700 dark:bg-yellow-950/30"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cited regulation text</p><mark className="mt-2 block bg-yellow-200/80 text-foreground dark:bg-yellow-500/40">{quotation}</mark></div> : null}
+    {matchState === "unmatched" && quotation ? <div className="border-b border-evidence/30 bg-evidence/8 p-4 text-sm"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cited regulation text</p><mark className="mt-2 block bg-evidence/20 text-foreground">{quotation}</mark></div> : null}
     <div className="max-h-[70vh] overflow-auto p-4">
       <div className="relative mx-auto w-fit bg-white shadow-sm" aria-label={`${title}, page ${pageNumber}`}>
         {!pageCount ? <div className="flex h-96 w-72 items-center justify-center"><LoaderCircle className="animate-spin text-muted-foreground" /></div> : null}
         <canvas ref={canvasRef} className={pageCount ? "block" : "hidden"} />
-        {highlights.map((highlight, index) => <span key={`${highlight.left}-${highlight.top}-${index}`} className="pointer-events-none absolute rounded-sm bg-yellow-300/60 ring-2 ring-yellow-500/80 mix-blend-multiply" style={{ left: highlight.left, top: highlight.top, width: highlight.width, height: highlight.height }} />)}
+        {highlights.map((highlight, index) => <span key={`${highlight.left}-${highlight.top}-${index}`} className="pointer-events-none absolute rounded-sm bg-evidence/35 ring-2 ring-evidence/70 mix-blend-multiply" style={{ left: highlight.left, top: highlight.top, width: highlight.width, height: highlight.height }} />)}
       </div>
     </div>
   </div>;

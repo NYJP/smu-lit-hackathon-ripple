@@ -34,6 +34,7 @@ from api.routers import (
     graph,
     impacts,
     jobs,
+    personalization,
     recommendations,
     regulations,
     requirements,
@@ -153,6 +154,7 @@ api_router.include_router(search.router)
 api_router.include_router(settings.router)
 api_router.include_router(jobs.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(personalization.router)
 api_router.include_router(files.router)
 
 app.include_router(api_router)

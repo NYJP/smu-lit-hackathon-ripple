@@ -165,3 +165,33 @@ def for_span(
             (chunk_id, span_end, start),
         ).fetchone()
     return dict(row) if row else None
+
+
+def for_spans(
+    conn: sqlite3.Connection,
+    spans: list[tuple[str, str, int | None, int | None]],
+) -> dict[str, dict | None]:
+    """Resolve many ``(key, chunk, start, end)`` spans with one SQL query."""
+    if not spans:
+        return {}
+    chunk_ids = list(dict.fromkeys(chunk_id for _, chunk_id, _, _ in spans))
+    rows = conn.execute(
+        f"""SELECT dc.document_chunk_id, dc.sentence_start, dc.sentence_end,
+                   u.id, u.display_name
+              FROM document_contributions dc JOIN users u ON u.id=dc.user_id
+             WHERE dc.document_chunk_id IN ({','.join('?' * len(chunk_ids))})
+             ORDER BY dc.document_chunk_id, dc.sentence_start""",
+        chunk_ids,
+    ).fetchall()
+    by_chunk: dict[str, list[sqlite3.Row]] = {}
+    for row in rows:
+        by_chunk.setdefault(row["document_chunk_id"], []).append(row)
+    result: dict[str, dict | None] = {}
+    for key, chunk_id, start, end in spans:
+        candidates = by_chunk.get(chunk_id, [])
+        match = candidates[0] if start is None and candidates else None
+        if start is not None:
+            span_end = end if end is not None and end > start else start + 1
+            match = next((row for row in candidates if row["sentence_start"] < span_end and row["sentence_end"] > start), None)
+        result[key] = {"id": match["id"], "display_name": match["display_name"]} if match else None
+    return result

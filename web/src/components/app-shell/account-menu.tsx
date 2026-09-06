@@ -9,7 +9,8 @@
  */
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, Settings, Users } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -64,10 +65,7 @@ export function AccountMenu() {
               <DropdownMenuItem
                 key={account.id}
                 disabled={switching !== null}
-                onSelect={(e) => {
-                  e.preventDefault();
-                  handleSwitch(account.id);
-                }}
+                onSelect={() => void handleSwitch(account.id)}
               >
                 <div className="flex w-full items-center justify-between">
                   <span>{account.display_name}</span>
@@ -77,6 +75,9 @@ export function AccountMenu() {
             ))}
           </>
         )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild><Link href="/people"><Users />People</Link></DropdownMenuItem>
+        <DropdownMenuItem asChild><Link href="/settings"><Settings />Settings</Link></DropdownMenuItem>
         <DropdownMenuSeparator />
         <p className="px-2 py-2 text-xs leading-snug text-muted-foreground">
           Accounts are not secured. Anyone using this install can view as anyone.

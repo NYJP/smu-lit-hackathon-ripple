@@ -4,9 +4,9 @@
 
 **Goal:** Complete the remaining PRD workflows so a user can ingest a corpus, discover and review regulatory changes, inspect evidence-backed impacts, run scans and simulations, make recorded decisions, and understand the result through the dashboard and dependency graph.
 
-**Architecture:** Preserve the current FastAPI + SQLite/FTS5/sqlite-vec backend and Next.js App Router frontend. Consolidate change, impact, scan, simulation, and recommendation logic into domain services; run expensive work through the existing jobs mechanism; give every authenticated account organization-wide administrator access. Preserve the user-approved React Flow graph and selectable blocking sample environments.
+**Architecture:** Preserve the current FastAPI + SQLite/FTS5/sqlite-vec backend and Next.js App Router frontend. Consolidate change, impact, scan, simulation, and recommendation logic into domain services; run expensive work through the existing jobs mechanism; give every authenticated account organization-wide administrator access. Use the approved canvas-based `react-force-graph-2d` graph and selectable blocking sample environments.
 
-**Tech Stack:** Python 3.12, FastAPI, SQLite/FTS5/sqlite-vec, official OpenAI Python SDK, Next.js 15, React 19, TypeScript, Tailwind CSS, shadcn/ui, React Flow.
+**Tech Stack:** Python 3.12, FastAPI, SQLite/FTS5/sqlite-vec, OpenAI-compatible SDK through OpenRouter, Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, react-force-graph-2d.
 
 **Spec:** `PRD.md` sections 6–14, with the user decisions recorded under “Resolved product decisions” below.
 
@@ -27,7 +27,7 @@
 
 ## Resolved Product Decisions
 
-- Keep React Flow. The PRD's Cytoscape/fcose choice was a default, and the user explicitly chose and approved the existing React Flow implementation.
+- Use `react-force-graph-2d`. The live d3-force simulation supersedes the earlier Cytoscape/fcose default and React Flow note; load it with `dynamic(..., { ssr: false })`.
 - Keep Settings, Requirements, and Scans in navigation. They are user-requested additions to the PRD navigation.
 - Keep selectable PDPF/PDPA, merger and acquisition, capital markets, energy market, and carbon-credit sample environments. Loading a scenario atomically replaces the current environment and blocks browsing until embeddings, mappings, and impacts are ready.
 - Keep the expanded PDPF sample visible to all three sample accounts. This intentionally supersedes the older reference-demo expectation that Sam sees zero impact.

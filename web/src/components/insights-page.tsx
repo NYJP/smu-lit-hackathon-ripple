@@ -1,33 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowUpRight, FileText, GitBranch } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { SeverityBadge } from "@/components/ui/severity-badge";
+import { SourceBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DependencyGraph } from "@/components/dependency-graph";
+import { DependencyGraph } from "@/components/graph/dependency-graph";
+import type { ChangeSource, ChangeType, Severity } from "@/lib/types";
 
-type Dashboard = { impact_counts: Record<string, number>; documents_visible: number; recent_changes: Change[] };
-type Change = { id: string; summary: string; change_type: string; analysis_status: string; created_at: string; impact_count?: number; counts?: Record<string, number> };
+type Change = {
+  id: string;
+  summary: string;
+  change_type: ChangeType;
+  source: ChangeSource;
+  analysis_status: string;
+  created_at: string;
+  max_severity: Severity;
+  impact_count?: number;
+  counts?: Record<string, number>;
+};
 
 function Loading() { return <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>; }
-
-export function DashboardView() {
-  const [data, setData] = useState<Dashboard | null>(null);
-  useEffect(() => { api.get<Dashboard>("/dashboard").then(setData).catch(() => setData({ impact_counts: {}, documents_visible: 0, recent_changes: [] })); }, []);
-  if (!data) return <Loading />;
-  const high = data.impact_counts.high ?? 0;
-  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Overview</p><h1 className="text-2xl font-semibold tracking-tight">Compliance dashboard</h1></div><div className="mt-7 grid gap-4 md:grid-cols-3"><Metric href="/changes" label="High-priority impacts" value={high} icon={<AlertTriangle className="text-destructive" />} /><Metric href="/documents" label="Visible documents" value={data.documents_visible} icon={<FileText />} /><Metric href="/changes" label="Recent changes" value={data.recent_changes.length} icon={<GitBranch />} /></div><div className="mt-7 rounded-lg border"><div className="border-b px-4 py-3"><h2 className="text-sm font-medium">Recent regulatory changes</h2></div>{data.recent_changes.length ? <div className="divide-y">{data.recent_changes.map(change => <Link key={change.id} href={`/changes/${change.id}`} className="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-muted/40"><div><p className="font-medium hover:underline">{change.summary}</p><p className="mt-1 text-sm text-muted-foreground">{change.change_type} · {change.analysis_status}</p></div><Badge variant={(change.impact_count ?? 0) > 0 ? "destructive" : "outline"}>{change.impact_count ?? 0} impacts</Badge></Link>)}</div> : <p className="px-4 py-8 text-center text-sm text-muted-foreground">No changes are ready to review.</p>}</div></div>;
-}
-
-function Metric({ href, label, value, icon }: { href: string; label: string; value: number; icon: ReactNode }) { return <Link href={href} className="group rounded-lg border p-4 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{label}</p><div className="flex items-center gap-2">{icon}<ArrowUpRight className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" /></div></div><p className="mt-3 text-2xl font-semibold tabular-nums">{value}</p></Link>; }
 
 export function ChangesView() {
   const [items, setItems] = useState<Change[] | null>(null);
   useEffect(() => { api.get<{ items: Change[] }>("/changes").then(result => setItems(result.items)).catch(() => setItems([])); }, []);
   if (!items) return <Loading />;
-  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Change feed</p><h1 className="text-2xl font-semibold tracking-tight">Regulatory changes</h1></div><div className="mt-7 overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Change</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Impacts</TableHead></TableRow></TableHeader><TableBody>{items.length ? items.map(item => <TableRow key={item.id}><TableCell className="font-medium"><Link className="hover:underline" href={`/changes/${item.id}`}>{item.summary}</Link></TableCell><TableCell className="capitalize">{item.change_type}</TableCell><TableCell><Badge variant="outline">{item.analysis_status}</Badge></TableCell><TableCell className="text-right tabular-nums">{item.impact_count ?? ((item.counts?.high ?? 0) + (item.counts?.medium ?? 0) + (item.counts?.low ?? 0))}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="py-12 text-center text-muted-foreground">No regulatory changes have been detected.</TableCell></TableRow>}</TableBody></Table></div></div>;
+  return <div className="mx-auto w-full max-w-6xl px-5 py-8"><div><p className="text-sm text-muted-foreground">Change feed</p><h1 className="text-2xl font-semibold tracking-tight">Regulatory changes</h1></div><div className="mt-7 overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Change</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Severity</TableHead><TableHead className="text-right">Impacts</TableHead></TableRow></TableHeader><TableBody>{items.length ? items.map(item => <TableRow key={item.id}><TableCell className="font-medium"><Link className="hover:underline" href={`/changes/${item.id}`}>{item.summary}</Link></TableCell><TableCell className="capitalize">{item.change_type}</TableCell><TableCell><div className="flex items-center gap-2"><Badge variant="outline">{item.analysis_status}</Badge><SourceBadge source={item.source} /></div></TableCell><TableCell><SeverityBadge severity={item.max_severity} /></TableCell><TableCell className="text-right tabular-nums">{item.impact_count ?? ((item.counts?.high ?? 0) + (item.counts?.medium ?? 0) + (item.counts?.low ?? 0))}</TableCell></TableRow>) : <TableRow><TableCell colSpan={5} className="py-12 text-center text-muted-foreground">No regulatory changes have been detected.</TableCell></TableRow>}</TableBody></Table></div></div>;
 }
 
 export function GraphView() {

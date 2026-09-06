@@ -5,7 +5,7 @@ import json
 import shutil
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +74,7 @@ def reset(conn: sqlite3.Connection) -> None:
         conn.execute("DELETE FROM jobs")
         conn.execute("DELETE FROM documents")
         conn.execute("DELETE FROM regulations")
+        conn.execute("DELETE FROM teams")
         conn.execute("DELETE FROM sessions")
         conn.execute("DELETE FROM users")
     _clear_runtime_files()
@@ -123,6 +124,25 @@ def _load_regulation(conn: sqlite3.Connection, source: Path, item: dict[str, Any
     return regulation_id
 
 
+def _effective_date(item: dict[str, Any]) -> str | None:
+    """Commencement date for a seeded change.
+
+    Scenarios carry `effective_in_days` (an offset) rather than a fixed date
+    on purpose. Severity escalates a `high` to `critical` inside a 30-day
+    window (services/severity.py), so a hard-coded date would silently change
+    what the demo shows as the months pass. An offset keeps the *behaviour*
+    deterministic: the same scenario always yields the same severity spread,
+    whenever it is loaded. An explicit `effective_date` still wins if present.
+    """
+    explicit = item.get("effective_date")
+    if explicit:
+        return str(explicit)
+    offset = item.get("effective_in_days")
+    if offset is None:
+        return None
+    return (datetime.now(timezone.utc).date() + timedelta(days=int(offset))).isoformat()
+
+
 def _insert_requirement(conn: sqlite3.Connection, lineage_id: str, regulation_id: str, version: int, item: dict[str, Any], *, current: bool, amended: bool = False) -> str:
     requirement_id = uuid.uuid4().hex
     text = item["new_text"] if amended else item["text"]
@@ -158,9 +178,9 @@ def _seed_requirements(conn: sqlite3.Connection, primary_id: str, amendment_id: 
             change_id = uuid.uuid4().hex
             conn.execute(
                 """INSERT INTO regulatory_changes
-                   (id,lineage_id,source,detected_from_regulation_id,previous_requirement_id,new_requirement_id,change_type,old_value,new_value,summary,source_section,analysis_status,created_at)
-                   VALUES (?,?, 'amendment',?,?,?,?,?,?,?,?,'pending',?)""",
-                (change_id, lineage_id, amendment_id, first_id, current_id, item["change_type"], item.get("value"), item.get("new_value"), item["change_summary"], item.get("source_section"), _now()),
+                   (id,lineage_id,source,detected_from_regulation_id,previous_requirement_id,new_requirement_id,change_type,old_value,new_value,summary,source_section,effective_date,analysis_status,created_at)
+                   VALUES (?,?, 'amendment',?,?,?,?,?,?,?,?,?,'pending',?)""",
+                (change_id, lineage_id, amendment_id, first_id, current_id, item["change_type"], item.get("value"), item.get("new_value"), item["change_summary"], item.get("source_section"), _effective_date(item), _now()),
             )
             changes.append(change_id)
         seeded.append((lineage_id, item))
@@ -204,6 +224,37 @@ def _seed_dependencies(conn: sqlite3.Connection, seeded: list[tuple[str, dict[st
                 ),
             )
     return created
+
+
+def _seed_personalization(conn: sqlite3.Connection, item: dict[str, Any]) -> dict[str, int]:
+    """Load deterministic relevance signals after documents and impacts exist."""
+    now = _now()
+    team_count = 0
+    for team in item.get("teams", []):
+        team_id = uuid.uuid4().hex
+        conn.execute("INSERT INTO teams(id,name,practice_area,created_at) VALUES (?,?,?,?)", (team_id, team["name"], team.get("practice_area"), now))
+        team_count += 1
+        for member_name in team.get("members", []):
+            conn.execute("INSERT INTO team_members(team_id,user_id,role,added_at) VALUES (?,?,'member',?)", (team_id, _owner(conn, member_name), now))
+        for document_name in team.get("documents", []):
+            document = conn.execute("SELECT id FROM documents WHERE name=?", (document_name,)).fetchone()
+            if document:
+                conn.execute("INSERT INTO document_teams(document_id,team_id,assigned_at) VALUES (?,?,?)", (document["id"], team_id, now))
+    follow_count = 0
+    for follow in item.get("follows", []):
+        if follow["subject_type"] != "document":
+            continue
+        subject = conn.execute("SELECT id FROM documents WHERE name=?", (follow["subject"],)).fetchone()
+        if subject:
+            conn.execute("INSERT INTO follows(user_id,subject_type,subject_id,created_at) VALUES (?,'document',?,?)", (_owner(conn, follow["user"]), subject["id"], now))
+            follow_count += 1
+    assignment_count = 0
+    for assignment in item.get("assignments", []):
+        document = conn.execute("SELECT id FROM documents WHERE name=?", (assignment["document"],)).fetchone()
+        if document:
+            cursor = conn.execute("UPDATE impacts SET assigned_to=?, updated_at=? WHERE document_id=? AND impact_level<>'none'", (_owner(conn, assignment["user"]), now, document["id"]))
+            assignment_count += cursor.rowcount
+    return {"teams": team_count, "follows": follow_count, "assignments": assignment_count}
 
 
 def _embed_environment(conn: sqlite3.Connection) -> tuple[int, dict[str, Any]]:
@@ -251,6 +302,7 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
     impact_count = sum(
         impact.analyse_change(conn, change_id).impacts_created for change_id in changes
     )
+    personalization = _seed_personalization(conn, item)
     expected_embeddings = conn.execute(
         """SELECT
              (SELECT COUNT(*) FROM document_chunks
@@ -264,6 +316,9 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
         "dependencies": conn.execute("SELECT COUNT(DISTINCT lineage_id) AS n FROM dependencies").fetchone()["n"] == len(item["requirements"]),
         "impacts": impact_count >= len(changes),
         "embeddings": embedding_count == expected_embeddings,
+        "teams": personalization["teams"] == len(item.get("teams", [])),
+        "follows": personalization["follows"] == len(item.get("follows", [])),
+        "assignments": personalization["assignments"] >= len(item.get("assignments", [])),
     }
     if not all(checks.values()):
         failed = ", ".join(name for name, passed in checks.items() if not passed)
@@ -279,4 +334,5 @@ def load_sample(conn: sqlite3.Connection, scenario_id: str = "pdpf") -> dict[str
         "impacts": impact_count,
         "embeddings": embedding_count,
         "embedding_usage": embedding_usage,
+        **personalization,
     }

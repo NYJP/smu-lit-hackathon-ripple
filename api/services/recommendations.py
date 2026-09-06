@@ -164,3 +164,119 @@ def generate(
     result = dict(conn.execute("SELECT * FROM recommendations WHERE id = ?", (recommendation_id,)).fetchone())
     result["source_citations"] = json.loads(result["source_citations"] or "[]")
     return result, usage
+
+
+# --------------------------------------------------------------- decisions --
+# One code path for "a person decided about this proposed wording", reachable
+# by recommendation id (PATCH /recommendations/{id}) or by impact id
+# (POST /impacts/{id}/patch). Both must behave identically, because the second
+# exists only so the review screen can address the thing it is looking at.
+#
+# Accepting is what makes the promise concrete: the approved text is written
+# to `document_patches` and nowhere else. Routing both entry points through
+# here is what stops a future caller reaching 'resolved' by acceptance without
+# ever recording the wording that was accepted.
+
+DecisionStatus = str  # 'accepted' | 'edited' | 'rejected'
+
+
+def decide(
+    conn: sqlite3.Connection,
+    recommendation_id: str,
+    *,
+    status: DecisionStatus,
+    actor_id: str,
+    edited_text: str | None = None,
+    decision_note: str | None = None,
+) -> dict[str, Any]:
+    """Record a decision, write the patch when accepted, move the impact.
+
+    Returns `{"recommendation_id", "impact_id", "patch_id", "changed"}`.
+    Does not commit — the router owns the transaction so the decision, the
+    patch and the transition land together or not at all.
+    """
+    from api.services import patching, workflow
+
+    if status not in {"accepted", "edited", "rejected"}:
+        raise ApiError(422, "validation_error", f"Unknown decision '{status}'.")
+
+    row = conn.execute(
+        """SELECT r.*, i.id AS impact_id, i.review_status, c.source
+             FROM recommendations r
+             JOIN impacts i ON i.id = r.impact_id
+             JOIN regulatory_changes c ON c.id = i.regulatory_change_id
+            WHERE r.id = ?""",
+        (recommendation_id,),
+    ).fetchone()
+    if row is None:
+        raise ApiError(404, "not_found", "Recommendation not found.")
+
+    # Mirrors `capabilities.accept_recommendation` on GET /impacts/{id}: a
+    # hypothetical change must not be able to produce a real approved patch.
+    if row["source"] == "simulation" and status in {"accepted", "edited"}:
+        raise ApiError(409, "conflict", "Promote the simulation before accepting this recommendation.")
+
+    edited_text = edited_text.strip() if edited_text else None
+    decision_note = decision_note.strip() if decision_note else None
+    if status == "edited" and not edited_text:
+        raise ApiError(422, "validation_error", "edited_text is required when marking a recommendation edited.")
+
+    existing_patch = patching.patch_for_impact(conn, row["impact_id"])
+    duplicate = (
+        row["status"] == status
+        and (row["edited_text"] or None) == edited_text
+        and (row["decision_note"] or None) == decision_note
+        and row["decided_by"] == actor_id
+    )
+    # A repeated identical decision is a no-op *only* if its consequence is
+    # already on record. Re-issuing an accept whose patch is missing must
+    # still produce the patch.
+    if duplicate and (status == "rejected" or existing_patch is not None):
+        return {
+            "recommendation_id": recommendation_id,
+            "impact_id": row["impact_id"],
+            "patch_id": existing_patch["id"] if existing_patch else None,
+            "changed": False,
+        }
+
+    now = _now()
+    conn.execute(
+        """INSERT INTO recommendation_decisions
+             (id, recommendation_id, status, edited_text, decision_note, decided_by, decided_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (uuid.uuid4().hex, recommendation_id, status, edited_text, decision_note, actor_id, now),
+    )
+    conn.execute(
+        """UPDATE recommendations
+              SET status=?, edited_text=?, decision_note=?, decided_by=?, decided_at=?
+            WHERE id=?""",
+        (status, edited_text, decision_note, actor_id, now, recommendation_id),
+    )
+
+    patch_id: str | None = None
+    if status in {"accepted", "edited"}:
+        patch_id = patching.apply_patch(
+            conn,
+            row["impact_id"],
+            edited_text or row["suggested_text"],
+            actor_id,
+            recommendation_id=recommendation_id,
+        )
+    elif existing_patch is not None:
+        # Rejecting after an earlier acceptance withdraws the overlay too,
+        # otherwise the reader would keep showing wording nobody stands behind.
+        patching.revert_patch(conn, existing_patch["id"], actor_id)
+
+    workflow.transition(
+        conn,
+        row["impact_id"],
+        "resolved" if status in {"accepted", "edited"} else "in_review",
+        actor_id,
+        note=decision_note,
+    )
+    return {
+        "recommendation_id": recommendation_id,
+        "impact_id": row["impact_id"],
+        "patch_id": patch_id,
+        "changed": True,
+    }

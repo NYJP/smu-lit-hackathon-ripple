@@ -14,7 +14,9 @@ from api import access
 from api.auth import get_current_user
 from api.db import get_connection, get_db
 from api.errors import ApiError
-from api.services import contributions, jobs, mapping, openai, parsing, retrieval, scanning, storage
+from api.services import clauses, contributions, jobs, mapping, openai, parsing, patching, retrieval, scanning, storage
+from api.services import severity as severity_service
+from api.services import workflow
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -35,6 +37,36 @@ class DocumentPatch(BaseModel):
     doc_type: str | None = None
     version_label: str | None = Field(default=None, max_length=200)
     owner_id: str | None = None
+
+
+def _max_open_severity(conn: sqlite3.Connection, document_ids: list[str]) -> dict[str, str]:
+    """Highest still-open severity per document, keyed by document id.
+
+    One query for the whole page. Severity is derived per impact (the parent
+    change's effective date decides the critical escalation), so this cannot
+    be a plain SQL MAX over `impact_level`.
+    """
+    if not document_ids:
+        return {}
+    placeholders = ",".join("?" * len(document_ids))
+    open_clause, open_values = workflow.open_status_sql("i.review_status")
+    rows = conn.execute(
+        f"""SELECT i.document_id, i.impact_level, i.confidence,
+                   c.change_type, c.effective_date
+              FROM impacts i
+              JOIN regulatory_changes c ON c.id = i.regulatory_change_id
+             WHERE i.document_id IN ({placeholders})
+               AND i.impact_level <> 'none'
+               AND {open_clause}""",
+        [*document_ids, *open_values],
+    ).fetchall()
+    worst: dict[str, str] = {}
+    for row in rows:
+        level = severity_service.derive_severity(row, row)
+        current = worst.get(row["document_id"], "none")
+        if severity_service.SEVERITY_RANK[level] > severity_service.SEVERITY_RANK[current]:
+            worst[row["document_id"]] = level
+    return worst
 
 
 def _document_collaborators(conn: sqlite3.Connection, document_id: str) -> list[dict]:
@@ -248,7 +280,11 @@ def list_documents(
         f"""SELECT d.*, u.display_name AS owner_name,
                   (SELECT COUNT(*) FROM document_chunks c WHERE c.document_id = d.id) AS chunk_count,
                   (SELECT COUNT(*) FROM dependencies dep WHERE dep.document_id = d.id AND dep.status = 'active') AS dependency_count,
-                  (SELECT COUNT(*) FROM impacts i WHERE i.document_id = d.id AND i.review_status = 'open') AS open_impact_count
+                  (SELECT COUNT(*) FROM impacts i
+                    WHERE i.document_id = d.id
+                      AND i.impact_level <> 'none'
+                      AND i.review_status IN ('detected','awaiting_review','in_review',
+                                              'needs_analysis','patch_proposed','awaiting_approval')) AS open_impact_count
              FROM documents d JOIN users u ON u.id = d.owner_id
              WHERE d.id IN ({placeholders}) AND (? IS NULL OR d.created_at < ?)
              ORDER BY d.created_at DESC, d.id DESC""",
@@ -260,6 +296,10 @@ def list_documents(
         rows = [row for row in rows if row["owner_id"] != user["id"] and any(c["id"] == user["id"] for c in _document_collaborators(conn, row["id"]))]
     more = len(rows) > limit
     rows = rows[:limit]
+    # Worst open severity per document, in one query rather than per row.
+    # Derived rather than a SQL MAX(impact_level) because the critical
+    # escalation depends on the parent change's effective date.
+    severity_by_document = _max_open_severity(conn, [row["id"] for row in rows])
     items = []
     for row in rows:
         item = {key: row[key] for key in ("id", "name", "doc_type", "status", "page_count", "chunk_count", "dependency_count", "open_impact_count", "created_at")}
@@ -267,6 +307,7 @@ def list_documents(
             "owner": {"id": row["owner_id"], "display_name": row["owner_name"]},
             "collaborators": _document_collaborators(conn, row["id"]),
             "contributors": contributions.for_document(conn, row["id"]),
+            "max_severity": severity_by_document.get(row["id"], "none"),
             "last_scanned_at": None,
         })
         items.append(item)
@@ -340,23 +381,69 @@ def patch_document(document_id: str, payload: DocumentPatch, conn: sqlite3.Conne
     return _document_detail(conn, document_id)
 
 
+def _open_impacts_by_chunk(conn: sqlite3.Connection, document_id: str) -> dict[str, list[dict]]:
+    """Still-open findings on this document, grouped by chunk, worst first.
+
+    One query for the whole document. Severity is derived per impact (the
+    parent change's effective date decides the critical escalation), so it
+    cannot be a SQL MAX over `impact_level`.
+    """
+    open_clause, open_values = workflow.open_status_sql("i.review_status")
+    rows = conn.execute(
+        f"""SELECT i.id, i.document_chunk_id, i.impact_level, i.confidence, i.reason,
+                   i.review_status, i.conflicting_span, i.conflicting_start, i.conflicting_end,
+                   c.change_type, c.effective_date, c.source, c.summary AS change_summary
+              FROM impacts i
+              JOIN regulatory_changes c ON c.id = i.regulatory_change_id
+             WHERE i.document_id = ? AND i.impact_level <> 'none' AND {open_clause}""",
+        [document_id, *open_values],
+    ).fetchall()
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        item = dict(row)
+        item["severity"] = severity_service.derive_severity(row, row)
+        item["review_status_label"] = workflow.STATUS_LABELS.get(row["review_status"], row["review_status"])
+        grouped.setdefault(row["document_chunk_id"], []).append(item)
+    for items in grouped.values():
+        items.sort(key=lambda entry: -severity_service.SEVERITY_RANK.get(entry["severity"], 0))
+    return grouped
+
+
 def _document_detail(conn: sqlite3.Connection, document_id: str) -> dict:
     doc = conn.execute("SELECT d.*, u.display_name AS owner_name FROM documents d JOIN users u ON u.id = d.owner_id WHERE d.id = ?", (document_id,)).fetchone()
     chunks = conn.execute("SELECT * FROM document_chunks WHERE document_id = ? ORDER BY ordinal", (document_id,)).fetchall()
+    impacts_by_chunk = _open_impacts_by_chunk(conn, document_id)
+    # Approved wording is an overlay the reader composes over the stored text.
+    # `document_chunks.content` below is exactly what was uploaded — patching
+    # never rewrites it (api/services/patching.py).
+    patches = patching.patches_for_document(conn, document_id)
+    patches_by_chunk: dict[str, list[dict]] = {}
+    for patch in patches:
+        patches_by_chunk.setdefault(patch["document_chunk_id"], []).append(patch)
     rendered = []
     for chunk in chunks:
         deps = conn.execute("""SELECT dep.*, l.public_ref FROM dependencies dep JOIN requirement_lineages l ON l.id = dep.lineage_id
                              WHERE dep.document_chunk_id = ? AND dep.status = 'active'""", (chunk["id"],)).fetchall()
+        chunk_impacts = impacts_by_chunk.get(chunk["id"], [])
         rendered.append({
             **dict(chunk),
+            # Same locator the review queue and review screen use.
+            "clause_label": clauses.clause_label(chunk),
             "dependencies": [{key: dep[key] for key in ("lineage_id", "public_ref", "confidence", "relationship_type", "evidence_start", "evidence_end")} for dep in deps],
             "contributions": contributions.for_chunk(conn, chunk["id"]),
+            "impacts": chunk_impacts,
+            "severity": severity_service.max_severity(item["severity"] for item in chunk_impacts),
+            "patches": patches_by_chunk.get(chunk["id"], []),
         })
     document = dict(doc)
     document["owner"] = {"id": doc["owner_id"], "display_name": doc["owner_name"]}
     document["collaborators"] = _document_collaborators(conn, document_id)
     document["contributors"] = contributions.for_document(conn, document_id)
-    return {"document": document, "chunks": rendered}
+    document["max_severity"] = severity_service.max_severity(
+        chunk["severity"] for chunk in rendered
+    )
+    document["patch_count"] = len(patches)
+    return {"document": document, "chunks": rendered, "patches": patches}
 
 
 @router.get("/{document_id}")

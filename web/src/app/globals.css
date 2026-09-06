@@ -1,4 +1,3 @@
-@import "@xyflow/react/dist/style.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -12,10 +11,17 @@
   --font-serif: var(--font-serif);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-heading: var(--font-sans);
+  --color-impact-critical: var(--impact-critical);
   --color-impact-high: var(--impact-high);
   --color-impact-medium: var(--impact-medium);
   --color-impact-low: var(--impact-low);
   --color-impact-none: var(--impact-none);
+  --color-status-attention: var(--status-attention);
+  --color-status-progress: var(--status-progress);
+  --color-status-done: var(--status-done);
+  --color-status-neutral: var(--status-neutral);
+  --color-sim: var(--sim);
+  --color-evidence: var(--evidence);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -55,6 +61,7 @@
 }
 
 :root {
+  --motion-purposeful: 300ms;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -90,12 +97,31 @@
 
   /* Section 10.1: one impact scale everywhere, colour never the only
      carrier of meaning (10.4 / 10.1 rule 10 — must print legibly in
-     greyscale). Not yet drawn anywhere this wave; no impact data exists
-     until the impact engine wave (build order step 7). */
-  --impact-high: oklch(0.577 0.245 27.325);
-  --impact-medium: oklch(0.72 0.16 60);
-  --impact-low: oklch(0.556 0 0);
-  --impact-none: oklch(0.708 0 0);
+     greyscale). Every value below is chosen to clear WCAG AA (4.5:1) as
+     text on --background, because these are used as `text-impact-*` on a
+     tinted chip, not just as fills.
+
+     `critical` is derived, not stored: services/severity.py escalates a
+     stored `high` whose deadline is inside 30 days. Lightness descends
+     critical -> high -> medium so the scale still reads in greyscale. */
+  --impact-critical: oklch(0.44 0.2 25);
+  --impact-high: oklch(0.46 0.2 27.325);
+  --impact-medium: oklch(0.49 0.12 65);
+  --impact-low: oklch(0.53 0.1 250);
+  --impact-none: oklch(0.556 0 0);
+
+  /* Workflow status is a separate dimension from severity — a critical
+     finding can be resolved, a low one can be urgent to look at. Never
+     render a status in a severity colour or the two collapse. */
+  --status-attention: oklch(0.48 0.12 65);
+  --status-progress: oklch(0.53 0.14 250);
+  --status-done: oklch(0.5 0.12 155);
+  --status-neutral: oklch(0.556 0 0);
+
+  /* Simulation. Purple exists so a hypothetical edit can never be mistaken
+     for a detected change (section 10.4). */
+  --sim: oklch(0.5 0.19 300);
+  --evidence: oklch(0.62 0.13 80);
 }
 
 .dark {
@@ -131,10 +157,21 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 
+  /* Lightened against the dark ground; same descending order so the
+     greyscale reading survives the theme swap. */
+  --impact-critical: oklch(0.62 0.22 22);
   --impact-high: oklch(0.704 0.191 22.216);
-  --impact-medium: oklch(0.75 0.15 65);
-  --impact-low: oklch(0.708 0 0);
-  --impact-none: oklch(0.556 0 0);
+  --impact-medium: oklch(0.78 0.14 70);
+  --impact-low: oklch(0.72 0.11 250);
+  --impact-none: oklch(0.708 0 0);
+
+  --status-attention: oklch(0.78 0.14 70);
+  --status-progress: oklch(0.72 0.13 250);
+  --status-done: oklch(0.72 0.14 155);
+  --status-neutral: oklch(0.708 0 0);
+
+  --sim: oklch(0.72 0.16 300);
+  --evidence: oklch(0.78 0.12 80);
 }
 
 @layer base {
@@ -147,9 +184,26 @@
   html {
     @apply font-sans;
   }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
   /* Section 10.1 rule 9: tabular numerals, real column headers, dense
      tables by default. */
   table {
     font-variant-numeric: tabular-nums;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes ripple-pulse { 50% { transform: scale(1.08); box-shadow: 0 0 0 6px color-mix(in oklch, var(--sim) 18%, transparent); } }
+@keyframes ripple-travel { from { transform: translate(0, -50%); } to { transform: translate(calc(100% - .5rem), -50%); } }
+.animate-ripple-pulse { animation: ripple-pulse var(--motion-purposeful) ease-out 1; }
+.animate-ripple-travel { animation: ripple-travel var(--motion-purposeful) ease-in-out 1; }

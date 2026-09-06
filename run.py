@@ -64,6 +64,24 @@ def require_venv() -> Path:
     return py
 
 
+def find_npm() -> str | None:
+    """Locate an npm that subprocess can actually execute.
+
+    On Windows, node ships three siblings on PATH: `npm` (a POSIX shell
+    script), `npm.cmd`, and `npm.ps1`. Only the .cmd is a real executable
+    for CreateProcess. Python 3.12 changed shutil.which() to return the
+    extensionless `npm` when it exists, so the bare which() call raises
+    OSError [WinError 193] "%1 is not a valid Win32 application". Ask for
+    the .cmd explicitly first, and keep the plain lookup as the fallback
+    everywhere else.
+    """
+    if platform.system() == "Windows":
+        found = shutil.which("npm.cmd")
+        if found:
+            return found
+    return shutil.which("npm")
+
+
 def run_checked(cmd: list[str], cwd: Path | None = None, fix: str | None = None) -> None:
     """subprocess.run wrapped so a missing binary or a nonzero exit becomes
     a one-line, actionable message instead of a raw traceback."""
@@ -93,7 +111,7 @@ def cmd_install(args: argparse.Namespace) -> None:
     run_checked([str(venv_python()), "-m", "pip", "install", "-r", str(REQUIREMENTS)])
 
     if (WEB_DIR / "package.json").exists():
-        npm = shutil.which("npm")
+        npm = find_npm()
         if npm is None:
             fail(
                 "npm not found on PATH.",
@@ -222,7 +240,7 @@ def cmd_dev(args: argparse.Namespace) -> None:
     procs = [api_proc]
 
     if (WEB_DIR / "package.json").exists():
-        npm = shutil.which("npm")
+        npm = find_npm()
         if npm is None:
             _shutdown(procs, 1)
             fail("npm not found on PATH.", "Install Node.js, then run 'python run.py install'.")

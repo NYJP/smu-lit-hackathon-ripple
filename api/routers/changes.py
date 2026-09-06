@@ -13,6 +13,8 @@ from api.db import get_connection, get_db
 from api.errors import ApiError
 from api.services import changes as change_service
 from api.services import contributions, impact, jobs, scanning
+from api.services import severity as severity_service
+from api.services import workflow
 
 router = APIRouter(prefix="/changes", tags=["changes"])
 _LEVEL_RANK = {"high": 0, "medium": 1, "low": 2, "none": 3}
@@ -57,7 +59,8 @@ def list_changes(
                    SUM(CASE WHEN i.impact_level='high' THEN 1 ELSE 0 END) AS high_count,
                    SUM(CASE WHEN i.impact_level='medium' THEN 1 ELSE 0 END) AS medium_count,
                    SUM(CASE WHEN i.impact_level='low' THEN 1 ELSE 0 END) AS low_count,
-                   SUM(CASE WHEN i.impact_level='none' THEN 1 ELSE 0 END) AS none_count
+                   SUM(CASE WHEN i.impact_level='none' THEN 1 ELSE 0 END) AS none_count,
+                   MAX(CASE WHEN i.impact_level='high' THEN i.confidence END) AS max_high_confidence
             FROM regulatory_changes c
             LEFT JOIN requirement_lineages l ON l.id = c.lineage_id
             LEFT JOIN regulations origin_reg ON origin_reg.id = l.origin_regulation_id
@@ -72,12 +75,27 @@ def list_changes(
     items = []
     for row in rows:
         item = dict(row)
-        item["counts"] = {
+        counts = {
             "high": item.pop("high_count") or 0,
             "medium": item.pop("medium_count") or 0,
             "low": item.pop("low_count") or 0,
             "none": item.pop("none_count") or 0,
         }
+        # A change's severity is the worst of its impacts. Escalation depends on
+        # this change's own effective date, so one derivation answers for every
+        # `high` on the row — but it must use the best-evidenced of them, not an
+        # assumed confidence, or a thin finding would escalate on the strength
+        # of the deadline alone.
+        worst = "none"
+        for level in ("high", "medium", "low"):
+            if counts[level]:
+                worst = level
+                break
+        item["counts"] = counts
+        item["max_severity"] = severity_service.derive_severity(
+            {"impact_level": worst, "confidence": item.pop("max_high_confidence") or 0.0}, row
+        )
+        item["impact_count"] = counts["high"] + counts["medium"] + counts["low"]
         items.append(item)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
@@ -158,13 +176,25 @@ def list_change_impacts(
     impact_level: Literal["high", "medium", "low", "none"] | None = None,
     document_id: str | None = None,
     owner_id: str | None = None,
-    review_status: Literal["open", "in_review", "resolved", "dismissed"] | None = None,
+    review_status: Literal[
+        "detected",
+        "awaiting_review",
+        "in_review",
+        "needs_analysis",
+        "patch_proposed",
+        "awaiting_approval",
+        "resolved",
+        "dismissed",
+        "superseded",
+    ]
+    | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     conn: sqlite3.Connection = Depends(get_db),
     user: sqlite3.Row = Depends(get_current_user),
 ):
-    _require_change(conn, user, change_id)
+    # Held for severity derivation: escalation reads the change's effective date.
+    change = _require_change(conn, user, change_id)
     filters = ["i.regulatory_change_id = ?"]
     values: list[object] = [change_id]
     for clause, value in (
@@ -208,6 +238,10 @@ def list_change_impacts(
     items = []
     for row in rows:
         item = dict(row)
+        item["severity"] = severity_service.derive_severity(row, change)
+        item["review_status_label"] = workflow.STATUS_LABELS.get(
+            row["review_status"], row["review_status"]
+        )
         item["contributor"] = contributions.for_span(
             conn, row["chunk_id"], row["conflicting_start"], row["conflicting_end"]
         )
@@ -215,4 +249,11 @@ def list_change_impacts(
         if citations:
             item["source_citations"] = json.loads(citations)
         items.append(item)
+    # SQL ordered on the stored level, which cannot see the critical escalation.
+    items.sort(
+        key=lambda entry: (
+            -severity_service.SEVERITY_RANK.get(entry["severity"], 0),
+            (entry.get("document_name") or "").lower(),
+        )
+    )
     return {"items": items, "total": total, "limit": limit, "offset": offset}

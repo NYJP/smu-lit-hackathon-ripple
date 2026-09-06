@@ -6,6 +6,8 @@ import Link from "next/link";
 import { api, ApiRequestError } from "@/lib/api";
 import { useSession } from "@/lib/session-context";
 import { Badge } from "@/components/ui/badge";
+import { SeverityBadge } from "@/components/ui/severity-badge";
+import type { DocType, ProcessingStatus, Severity } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,11 +41,13 @@ type Scope = "all" | "mine" | "shared_with_me";
 type DocumentItem = {
   id: string;
   name: string;
-  doc_type: string;
-  status: "pending" | "processing" | "ready" | "failed";
+  doc_type: DocType;
+  status: ProcessingStatus;
   page_count: number | null;
   chunk_count: number;
   open_impact_count: number;
+  /** Worst still-open severity on this document, derived server-side. */
+  max_severity: Severity;
   owner: { id: string; display_name: string };
   collaborators: Array<{ id: string; display_name: string }>;
   contributors: Array<{ id: string; display_name: string }>;
@@ -250,9 +254,16 @@ export function DocumentsPageContent() {
                       : "—"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.open_impact_count > 0 ? "destructive" : "outline"}>
-                      {item.open_impact_count} {item.open_impact_count === 1 ? "issue" : "issues"}
-                    </Badge>
+                    {item.open_impact_count > 0 ? (
+                      <span className="inline-flex items-center gap-2">
+                        <SeverityBadge severity={item.max_severity} />
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {item.open_impact_count} open
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">None open</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge

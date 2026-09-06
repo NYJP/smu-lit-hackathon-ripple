@@ -1,5 +1,5 @@
-import { NotBuiltYet } from "@/components/not-built-yet";
+import { SimulationsPage as SimulationsPageContent } from "@/components/simulations/simulations-page";
 
 export default function SimulationsPage() {
-  return <NotBuiltYet title="Simulations" endpoint="/simulations" />;
+  return <SimulationsPageContent />;
 }

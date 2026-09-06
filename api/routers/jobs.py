@@ -44,7 +44,7 @@ def retry_job(
     source = job_service.get_job(conn, job_id)
     if source is None:
         raise ApiError(404, "not_found", "Job not found.")
-    supported = {"document_ingest", "regulation_ingest", "change_analysis", "scan"}
+    supported = {"document_ingest", "regulation_ingest", "change_analysis", "simulation_run", "scan"}
     if source["job_type"] not in supported:
         raise ApiError(409, "conflict", "This job type cannot be retried yet.")
     try:
@@ -63,6 +63,9 @@ def retry_job(
     elif source["job_type"] == "change_analysis":
         from api.services.scanning import run_change_analysis_job
         target = run_change_analysis_job
+    elif source["job_type"] == "simulation_run":
+        from api.services.simulations import run_simulation_job
+        target = run_simulation_job
     else:
         from api.services.scanning import run_scan_job
         conn.execute(
