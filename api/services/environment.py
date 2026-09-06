@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
+from api.sqlite_driver import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

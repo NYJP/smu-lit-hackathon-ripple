@@ -12,13 +12,14 @@ effect everywhere.
 from __future__ import annotations
 
 import os
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
 import sqlite_vec
+
+from api.sqlite_driver import sqlite3
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -48,11 +49,11 @@ def db_path() -> Path:
 def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
     """Load the sqlite-vec extension into an open connection.
 
-    Verified in isolation on Python 3.13.14 / Windows 11 before this module
-    was written: `sqlite3.Connection.enable_load_extension` is present in
-    this CPython build and `sqlite_vec.load()` succeeds. No fallback exists;
-    if this raises, the caller (main.py boot) should fail loudly rather than
-    silently degrade to keyword-only search.
+    The driver is selected by api.sqlite_driver. Linux uses pysqlite3's
+    statically linked SQLite build because some hosted Python runtimes omit
+    loadable-extension support; local platforms use the standard library.
+    If loading still fails, boot must fail loudly rather than silently
+    degrading to keyword-only search.
     """
     conn.enable_load_extension(True)
     try:

@@ -1,7 +1,7 @@
 """What-if simulations backed by the shared change and impact model."""
 from __future__ import annotations
 
-import sqlite3
+from api.sqlite_driver import sqlite3
 import uuid
 from datetime import datetime, timezone
 from typing import Literal

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
+from api.sqlite_driver import sqlite3
 from collections.abc import Mapping
 from typing import Any
 

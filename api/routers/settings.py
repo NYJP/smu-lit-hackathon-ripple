@@ -1,6 +1,6 @@
 """Admin-only local environment controls."""
 from __future__ import annotations
-import sqlite3
+from api.sqlite_driver import sqlite3
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from api.access import require_admin

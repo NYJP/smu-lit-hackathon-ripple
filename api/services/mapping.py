@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import hashlib
 import re
-import sqlite3
+from api.sqlite_driver import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone

@@ -7,7 +7,7 @@ routers have one stable access boundary while the wider PRD work proceeds.
 
 from __future__ import annotations
 
-import sqlite3
+from api.sqlite_driver import sqlite3
 
 from fastapi import Depends
 

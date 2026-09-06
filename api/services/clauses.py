@@ -27,7 +27,7 @@ document that parsed cleanly is unaffected by any of this.
 from __future__ import annotations
 
 import re
-import sqlite3
+from api.sqlite_driver import sqlite3
 from typing import Any, Mapping
 
 # A numbered heading: "4 Notification", "7.1 Retention Period", "2.3.1 Scope".

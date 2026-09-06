@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
+from api.sqlite_driver import sqlite3
 import uuid
 from datetime import datetime, timezone
 

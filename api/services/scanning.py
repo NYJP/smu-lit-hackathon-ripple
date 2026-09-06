@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+from api.sqlite_driver import sqlite3
 import threading
 import uuid
 from collections import defaultdict

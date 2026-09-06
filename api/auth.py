@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import secrets
-import sqlite3
+from api.sqlite_driver import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Request, Response
