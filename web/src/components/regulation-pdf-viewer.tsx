@@ -71,13 +71,37 @@ function multiply(left: number[], right: number[]) {
   ];
 }
 
-export function RegulationPdfViewer({ src, title, quotation, preferredPage }: { src: string; title: string; quotation: string | null; preferredPage?: number | null }) {
+export type PdfViewerCaptions = {
+  idle: string;
+  searching: string;
+  matched: (page: number) => string;
+  unmatched: string;
+  quotationLabel: string;
+};
+
+const REGULATION_CAPTIONS: PdfViewerCaptions = {
+  idle: "Source regulation",
+  searching: "Locating cited clause…",
+  matched: (page) => `Referenced clause highlighted on page ${page}`,
+  unmatched: "Referenced clause could not be located in the PDF text",
+  quotationLabel: "Cited regulation text",
+};
+
+export const DOCUMENT_CAPTIONS: PdfViewerCaptions = {
+  idle: "Source document",
+  searching: "Locating affected passage…",
+  matched: (page) => `Affected passage highlighted on page ${page}`,
+  unmatched: "Affected passage could not be located in the PDF text",
+  quotationLabel: "Affected passage",
+};
+
+export function RegulationPdfViewer({ src, title, quotation, preferredPage, captions = REGULATION_CAPTIONS }: { src: string; title: string; quotation: string | null; preferredPage?: number | null; captions?: PdfViewerCaptions }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(preferredPage ?? 1);
   const [pageCount, setPageCount] = useState(0);
   const [match, setMatch] = useState<Match | null>(null);
-  const [matchState, setMatchState] = useState<"searching" | "matched" | "unmatched">("searching");
+  const [matchState, setMatchState] = useState<"idle" | "searching" | "matched" | "unmatched">(quotation ? "searching" : "idle");
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +118,7 @@ export function RegulationPdfViewer({ src, title, quotation, preferredPage }: { 
       const result = quotation ? await findQuotation(pdf, quotation, preferredPage) : null;
       if (cancelled) return;
       setMatch(result);
-      setMatchState(result ? "matched" : "unmatched");
+      setMatchState(!quotation ? "idle" : result ? "matched" : "unmatched");
       setPageNumber(result?.page ?? (preferredPage && preferredPage <= pdf.numPages ? preferredPage : 1));
     }).catch(() => {
       if (!cancelled) setError("The source PDF could not be rendered.");
@@ -147,10 +171,10 @@ export function RegulationPdfViewer({ src, title, quotation, preferredPage }: { 
 
   return <div className="overflow-hidden rounded-lg border bg-muted/20">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3">
-      <div className="flex items-center gap-2 text-sm"><Search className="size-4" />{matchState === "searching" ? "Locating cited clause…" : matchState === "matched" ? `Referenced clause highlighted on page ${match?.page}` : "Referenced clause could not be located in the PDF text"}</div>
+      <div className="flex items-center gap-2 text-sm"><Search className="size-4" />{matchState === "idle" ? captions.idle : matchState === "searching" ? captions.searching : matchState === "matched" && match ? captions.matched(match.page) : captions.unmatched}</div>
       <div className="flex items-center gap-2"><Button type="button" size="icon-sm" variant="outline" aria-label="Previous PDF page" disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => page - 1)}><ChevronLeft /></Button><span className="min-w-20 text-center text-xs text-muted-foreground">Page {pageNumber}{pageCount ? ` of ${pageCount}` : ""}</span><Button type="button" size="icon-sm" variant="outline" aria-label="Next PDF page" disabled={!pageCount || pageNumber >= pageCount} onClick={() => setPageNumber((page) => page + 1)}><ChevronRight /></Button></div>
     </div>
-    {matchState === "unmatched" && quotation ? <div className="border-b border-evidence/30 bg-evidence/8 p-4 text-sm"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cited regulation text</p><mark className="mt-2 block bg-evidence/20 text-foreground">{quotation}</mark></div> : null}
+    {matchState === "unmatched" && quotation ? <div className="border-b border-evidence/30 bg-evidence/8 p-4 text-sm"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{captions.quotationLabel}</p><mark className="mt-2 block bg-evidence/20 text-foreground">{quotation}</mark></div> : null}
     <div className="max-h-[70vh] overflow-auto p-4">
       <div className="relative mx-auto w-fit bg-white shadow-sm" aria-label={`${title}, page ${pageNumber}`}>
         {!pageCount ? <div className="flex h-96 w-72 items-center justify-center"><LoaderCircle className="animate-spin text-muted-foreground" /></div> : null}

@@ -18,6 +18,10 @@ import {
   SectionHeader,
   Surface,
 } from "@/components/ui/workspace";
+import {
+  DOCUMENT_CAPTIONS,
+  RegulationPdfViewer,
+} from "@/components/regulation-pdf-viewer";
 import { api, apiUrl, ApiRequestError } from "@/lib/api";
 import { maxSeverity, severityCounts } from "@/lib/severity";
 import type { DocumentPatch, ReviewStatus, Severity } from "@/lib/types";
@@ -150,7 +154,7 @@ function renderSources(content: string, deps: Dependency[]) {
     out.push(
       <Link
         key={`${dep.lineage_id}-${dep.evidence_start}`}
-        href={`/requirements/${dep.lineage_id}`}
+        href={`/guidelines/${dep.lineage_id}`}
         className="bg-primary/5 underline decoration-primary decoration-dotted underline-offset-2"
         title={`${dep.public_ref} · ${dep.relationship_type}`}
       >
@@ -266,9 +270,19 @@ export function DocumentDetailPage() {
       });
     };
   const fileUrl = apiUrl(`/files/documents/${id}`),
-    isPdf =
-      data.document.mime_type.includes("pdf") ||
-      data.document.file_name.endsWith(".pdf");
+    // Every document gets the same reader. Uploads that are not already PDFs
+    // are rendered to one on request (see api/services/rendering.py), so the
+    // view no longer depends on which format the file happened to arrive in.
+    viewerUrl = `${fileUrl}?variant=display&inline=true`,
+    focusedChunk = focus
+      ? data.chunks.find((chunk) => chunk.id === focus.chunkId)
+      : undefined,
+    // Highlight the focused evidence span when there is one, so clicking an
+    // affected clause moves the page view to the same passage.
+    viewerQuotation =
+      focusedChunk && focus && focus.start !== null && focus.end !== null
+        ? focusedChunk.content.slice(focus.start, focus.end)
+        : (focusedChunk?.content ?? null);
   return (
     <PageFrame>
       <Link
@@ -330,15 +344,20 @@ export function DocumentDetailPage() {
           )}
         </Surface>
       </section>
-      {isPdf ? (
-        <Surface className="overflow-hidden">
-          <iframe
+      <section>
+        <SectionHeader
+          title="Source document"
+          description="The uploaded file as published. Approved wording overlays are shown in the clause rail below, never written back into this file."
+        />
+        <div className="mt-3">
+          <RegulationPdfViewer
+            src={viewerUrl}
             title={data.document.name}
-            src={`${fileUrl}?inline=true`}
-            className="h-[70vh] w-full bg-muted/20"
+            quotation={viewerQuotation}
+            captions={DOCUMENT_CAPTIONS}
           />
-        </Surface>
-      ) : null}
+        </div>
+      </section>
       <section>
         <SectionHeader
           title="Document clause rail"
