@@ -38,7 +38,7 @@ export function DependencyGraph() {
   const select=(id:string) => update({node:id,mode:id?"local":"global"});
   const open=(node:GraphNode) => router.push(`/documents/${node.id.slice(4)}`);
   return <PageFrame className="max-w-[96rem]"><PageHeader eyebrow="Relationship map" title="Dependency graph" description="Trace how regulatory change reaches internal documents." />
-    <div className="flex flex-wrap items-center justify-between gap-3"><GraphLegend /><Button variant="outline" size="sm" onClick={()=>setReset(v=>v+1)}><RotateCcw />Re-centre</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><GraphLegend nodes={shown?.nodes} /><Button variant="outline" size="sm" onClick={()=>setReset(v=>v+1)}><RotateCcw />Re-centre</Button></div>
     <GraphFilters state={state} teams={teams} owners={owners} onChange={update} />
     {error ? <Surface><EmptyState title="Graph unavailable" description={error} action={<Button onClick={()=>setReset(v=>v+1)}>Try again</Button>} /></Surface> : !shown ? <Surface><LoadingSkeleton rows={6} /></Surface> : !shown.nodes.length ? <Surface><EmptyState title="No dependencies found" description="Adjust the filters or choose all dependencies." /></Surface> : <>
       <Tabs value={view} onValueChange={setView}><TabsList><TabsTrigger value="graph"><Network />Visual graph</TabsTrigger><TabsTrigger value="table"><Table2 />Table view</TabsTrigger></TabsList>
