@@ -50,3 +50,14 @@ For a deterministic corpus built from scratch instead, use
 There are no passwords. Ripple ships with three named accounts, all deliberately treated as administrators. Choosing a name changes relevance ranking and explanations, never access: every account can see and act on the whole local workspace. Anyone with filesystem access to `./data/ripple.db` can read everything. Do not deploy this anywhere reachable by someone you do not already trust with the entire corpus.
 
 Load the deterministic PDPF corpus from **Settings → Sample environment**. The former `run.py seed` command is not implemented. Model calls use the official SDK through the configured OpenRouter-compatible `OPENAI_BASE_URL`; do not replace it with the OpenAI endpoint.
+
+## Deploying on Render
+
+The root `render.yaml` creates two services in Singapore:
+
+1. `ripple-web`, a free Node web service that runs Next.js and proxies `/api/v1/*` to the API over Render's private network.
+2. `ripple-api`, a paid Python web service with a 1 GB disk mounted at `/var/data` for SQLite and uploaded files.
+
+In Render, create a new Blueprint from this repository. During the first sync, enter the same values used locally for `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `RIPPLE_EMBEDDING_MODEL`, `RIPPLE_REASONING_MODEL`, and `RIPPLE_BULK_MODEL`. Render builds both services and runs database migrations automatically when the API starts.
+
+After both health checks pass, open the `ripple-web` URL and load a scenario from **Settings → Sample environment**. Do not open the API service as the application UI. The web service is the public entry point and keeps browser sessions on one origin.

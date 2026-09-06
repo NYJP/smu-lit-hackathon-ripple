@@ -8,6 +8,7 @@ section 16 are explicit that it is a point-of-view selector, not a boundary.
 
 from __future__ import annotations
 
+import os
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -19,6 +20,12 @@ from api.errors import ApiError
 
 COOKIE_NAME = "ripple_session"
 SESSION_TTL_DAYS = 30
+
+
+def _secure_cookie() -> bool:
+    return os.environ.get("RIPPLE_COOKIE_SECURE", "false").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 
 def _now() -> datetime:
@@ -77,7 +84,7 @@ def set_session_cookie(response: Response, session_id: str, expires: datetime) -
         value=session_id,
         httponly=True,
         samesite="lax",
-        secure=False,  # local-only, plain http on 127.0.0.1 (section 9)
+        secure=_secure_cookie(),
         max_age=SESSION_TTL_DAYS * 24 * 3600,
         expires=_iso(expires),
         path="/",
@@ -85,7 +92,7 @@ def set_session_cookie(response: Response, session_id: str, expires: datetime) -
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key=COOKIE_NAME, path="/")
+    response.delete_cookie(key=COOKIE_NAME, path="/", secure=_secure_cookie(), samesite="lax")
 
 
 def get_current_user(
