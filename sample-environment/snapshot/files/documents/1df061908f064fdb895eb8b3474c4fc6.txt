@@ -1,0 +1,16 @@
+Data Breach Response Procedure
+
+1 Purpose
+This procedure governs containment, assessment, notification, and post-incident review for personal-data incidents.
+
+2 Initial response
+The incident lead opens a case record, preserves relevant logs, assigns containment actions, and informs the Privacy Office. Systems containing affected data are isolated without destroying evidence.
+
+3 Regulatory assessment
+The Privacy Office determines whether harm is likely, records the categories and approximate volume of affected data, and identifies affected individuals and jurisdictions.
+
+4 Notification
+Notifiable personal-data breaches must be reported to the regulator within 72 hours after confirmation. The incident lead prepares the chronology, affected systems, containment status, and remediation plan.
+
+5 Closure
+The response team documents lessons learned, control owners, deadlines, and evidence that corrective actions were completed.

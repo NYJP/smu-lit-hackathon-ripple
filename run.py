@@ -311,6 +311,82 @@ def cmd_reindex(args: argparse.Namespace) -> None:
     run_checked(cmd)
 
 
+# ---------------------------------------------------------------- snapshot --
+
+SNAPSHOT_DIR = ROOT / "sample-environment" / "snapshot"
+
+
+def cmd_restore(args: argparse.Namespace) -> None:
+    """Copy the committed snapshot over ./data, reproducing a corpus exactly.
+
+    Counterpart to `snapshot`. Embeddings live inside the database file, so a
+    restore needs no OPENAI_API_KEY, makes no model calls, and costs nothing.
+    It also reproduces the exact rows, evidence spans, and confidences the
+    snapshot was taken from, which re-running ingestion cannot: extraction and
+    mapping go through a model, and its output varies between runs.
+    """
+    import shutil
+
+    db_src = SNAPSHOT_DIR / "ripple.db"
+    files_src = SNAPSHOT_DIR / "files"
+    if not db_src.exists():
+        fail(
+            f"No snapshot at {db_src.relative_to(ROOT)}.",
+            "Run 'python run.py snapshot' on a machine that has the corpus you want to share.",
+        )
+
+    db_dst = DATA_DIR / "ripple.db"
+    if db_dst.exists() and not args.force:
+        fail(
+            f"{db_dst.relative_to(ROOT)} already exists; refusing to overwrite it.",
+            "Re-run with --force if you mean to discard the local corpus.",
+        )
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    announce(f"Restoring the database to {db_dst.relative_to(ROOT)} ...")
+    shutil.copy2(db_src, db_dst)
+    # A stale write-ahead log belongs to the database being replaced, not the
+    # one arriving; left behind it would resurrect rows from the old file.
+    for suffix in ("-wal", "-shm"):
+        stale = db_dst.with_name(db_dst.name + suffix)
+        if stale.exists():
+            stale.unlink()
+
+    if files_src.exists():
+        files_dst = DATA_DIR / "files"
+        announce(f"Restoring uploads to {files_dst.relative_to(ROOT)} ...")
+        shutil.copytree(files_src, files_dst, dirs_exist_ok=True)
+
+    announce("Restore complete. Start it with 'python run.py dev'.")
+
+
+def cmd_snapshot(args: argparse.Namespace) -> None:
+    """Capture ./data into the committed snapshot, so others can reproduce it."""
+    import shutil
+
+    py = require_venv()
+    db_src = DATA_DIR / "ripple.db"
+    if not db_src.exists():
+        fail(f"No database at {db_src.relative_to(ROOT)}.", "Start the app and load a corpus first.")
+
+    db_dst = SNAPSHOT_DIR / "ripple.db"
+    SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    announce(f"Capturing {db_src.relative_to(ROOT)} -> {db_dst.relative_to(ROOT)} ...")
+    run_checked([str(py), str(ROOT / "scripts" / "capture_snapshot.py"), str(db_src), str(db_dst)])
+
+    files_src = DATA_DIR / "files"
+    files_dst = SNAPSHOT_DIR / "files"
+    if files_src.exists():
+        if files_dst.exists():
+            shutil.rmtree(files_dst)
+        # *.display.pdf is a render cache rebuilt on demand by
+        # api/services/rendering.py; shipping it would only go stale.
+        shutil.copytree(files_src, files_dst, ignore=shutil.ignore_patterns("*.display.pdf"))
+
+    size_mb = db_dst.stat().st_size / (1024 * 1024)
+    announce(f"Snapshot written ({size_mb:.1f} MB). Commit sample-environment/snapshot/ to share it.")
+
+
 # --------------------------------------------------------------------- cli --
 
 def build_parser() -> argparse.ArgumentParser:
@@ -336,6 +412,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_reindex = sub.add_parser("reindex", help="Rebuild the vec_* and fts_* mirror tables.")
     p_reindex.add_argument("--dims", type=int, default=None, help="Rebuild at this embedding dimensionality.")
     p_reindex.set_defaults(func=cmd_reindex)
+
+    p_restore = sub.add_parser("restore", help="Restore the committed corpus snapshot into ./data.")
+    p_restore.add_argument("--force", action="store_true", help="Overwrite an existing ./data/ripple.db.")
+    p_restore.set_defaults(func=cmd_restore)
+
+    p_snapshot = sub.add_parser("snapshot", help="Capture ./data into sample-environment/snapshot/.")
+    p_snapshot.set_defaults(func=cmd_snapshot)
 
     return parser
 

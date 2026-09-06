@@ -1,0 +1,13 @@
+Data Subject Request Procedure
+
+1 Intake and identity verification
+Requests are logged on receipt. The service team verifies identity using information proportionate to the sensitivity of the requested records.
+
+2 Search and collection
+System owners search customer, support, billing, marketing, and archived repositories. Legal reviews proposed redactions for third-party information and privilege.
+
+3 Response deadline
+Data-subject access requests must be completed within 30 days from verified receipt. The case owner records pauses, clarification requests, and any lawful extension.
+
+4 Delivery and audit trail
+Responses are delivered through an approved secure channel. The request, searches, approvals, response package, and delivery confirmation are retained in the case record.

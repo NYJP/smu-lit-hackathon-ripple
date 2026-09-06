@@ -1,0 +1,10 @@
+Consent Management Policy
+
+1 Collection
+Consent notices must identify the processing purpose, data categories, controller, withdrawal method, and consequences of declining where relevant.
+
+2 Evidence
+Systems record the notice version, timestamp, channel, affirmative action, and processing purposes associated with each consent.
+
+3 Withdrawal
+Consent withdrawal requests must be applied to active processing systems without undue delay. Downstream suppression signals are monitored and failures are escalated to the system owner.
