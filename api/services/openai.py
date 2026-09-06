@@ -144,6 +144,28 @@ def _call_with_retries(call: Callable[[], T]) -> T:
     raise ExternalServiceError("The configured model service could not be reached.") from last_error
 
 
+def _max_completion_tokens() -> int:
+    """Output budget for one structured call.
+
+    Reasoning models spend this budget on reasoning tokens before they emit
+    a single character of JSON, so a ceiling sized for the answer alone
+    truncates mid-object and the response fails schema validation with
+    finish_reason 'length'. Configurable so a long regulation can be given
+    more room without a code change.
+    """
+    try:
+        return max(1000, int(os.environ.get("RIPPLE_MAX_COMPLETION_TOKENS", "32000")))
+    except ValueError:
+        return 32000
+
+
+def _truncated(response: Any) -> bool:
+    try:
+        return response.choices[0].finish_reason == "length"
+    except (AttributeError, IndexError):
+        return False
+
+
 def _response_dict(response: Any) -> dict[str, Any]:
     if hasattr(response, "model_dump"):
         return response.model_dump(mode="json")
@@ -195,7 +217,7 @@ def structured_completion(
                     "type": "json_schema",
                     "json_schema": {"name": schema_name, "strict": True, "schema": schema},
                 },
-                max_completion_tokens=12000,
+                max_completion_tokens=_max_completion_tokens(),
             )
         )
         raw = _response_dict(response)
@@ -212,6 +234,16 @@ def structured_completion(
             jsonschema.validate(value, schema)
         except (IndexError, TypeError, ValueError, json.JSONDecodeError, jsonschema.ValidationError) as exc:
             _record_schema_failure(job_conn, job_id, raw, str(exc))
+            if _truncated(response):
+                # Re-asking cannot help: the second attempt has the same
+                # ceiling and truncates in the same place. Say what actually
+                # went wrong so the operator can raise it or split the input.
+                raise ExternalServiceError(
+                    "The model ran out of output budget before completing the response. "
+                    f"Raise RIPPLE_MAX_COMPLETION_TOKENS above {_max_completion_tokens()} "
+                    "or split the source into smaller windows.",
+                    raw_response=raw,
+                ) from exc
             if schema_attempt == 0:
                 repair = (
                     "\n\nYour previous response failed validation. Return a complete replacement "

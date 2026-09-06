@@ -13,8 +13,11 @@ import sqlite_vec
 
 from api.services import openai, parsing
 
-_WINDOW_CHARS = 48_000
-_OVERLAP_CHARS = 3_200
+# Sized so one window's requirements fit inside the model's output budget
+# (see openai._max_completion_tokens); a dense contract yields roughly
+# three output tokens per input character once verbatim quotes are echoed.
+_WINDOW_CHARS = 20_000
+_OVERLAP_CHARS = 2_000
 _RRF_OFFSET = 60
 _SEARCH_LIMIT = 40
 _RESULT_LIMIT = 20
