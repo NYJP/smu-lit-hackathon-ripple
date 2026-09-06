@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 
 const groups = [
   { label: "Documents", href: "/documents", icon: FileStack },
-  { label: "Regulatory", icon: Scale, children: [{ label: "Regulations", href: "/regulations", description: "Source instruments and amendments" }, { label: "Requirements", href: "/requirements", description: "Extracted regulatory obligations" }] },
+  { label: "Regulatory", icon: Scale, children: [{ label: "Regulations", href: "/regulations", description: "Source instruments and amendments" }, { label: "Guidelines", href: "/guidelines", description: "Extracted regulatory obligations" }] },
   { label: "Review", icon: BookOpen, children: [{ label: "Changes", href: "/changes", description: "Detected regulatory changes" }, { label: "Impacts", href: "/impacts", description: "Review and remediation queue" }] },
   { label: "Graph", href: "/graph", icon: Network },
   { label: "Simulations", href: "/simulations", icon: Sparkles },

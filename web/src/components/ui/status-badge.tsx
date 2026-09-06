@@ -60,7 +60,7 @@ function SimulatedBadge({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="simulated-badge"
-      title="Hypothetical. Nothing in your requirements or documents has changed."
+      title="Hypothetical. Nothing in your guidelines or documents has changed."
       className={cn(
         "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-4xl border border-sim/30 bg-sim/10 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-sim",
         className,

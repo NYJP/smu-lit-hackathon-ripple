@@ -78,7 +78,7 @@ export function SimulationsPage() {
           </span>
         }
         title="Simulations"
-        description="Explore hypothetical regulatory changes without altering a requirement or document."
+        description="Explore hypothetical regulatory changes without altering a guideline or document."
       />
       <Surface className="p-4">
         <div className="flex flex-wrap items-end gap-3">

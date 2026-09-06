@@ -57,7 +57,7 @@ export function RequirementDetailPage() {
   useEffect(() => {
     api.get<RequirementDetail>(`/requirements/${params.id}`)
       .then(setData)
-      .catch((err) => setError(err instanceof ApiRequestError ? err.message : "Could not load this requirement."));
+      .catch((err) => setError(err instanceof ApiRequestError ? err.message : "Could not load this guideline."));
   }, [params.id]);
 
   if (error) return <div className="mx-auto max-w-6xl px-5 py-8"><p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p></div>;
@@ -67,7 +67,7 @@ export function RequirementDetailPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-8">
-      <Link href="/requirements" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Requirements</Link>
+      <Link href="/guidelines" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" />Guidelines</Link>
       <div className="mt-5">
         <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{data.lineage.public_ref}</Badge><Badge variant="secondary" className="capitalize">{data.current_version.requirement_type}</Badge></div>
         <h1 className="mt-3 max-w-4xl text-2xl font-semibold tracking-tight">{data.current_version.requirement_text}</h1>
@@ -94,7 +94,7 @@ export function RequirementDetailPage() {
                 <p className="mt-3 line-clamp-3 text-sm leading-6">{dependency.excerpt}</p>
               </div>
             </Link>
-          )) : <p className="p-8 text-center text-sm text-muted-foreground">No visible documents are linked to this requirement.</p>}
+          )) : <p className="p-8 text-center text-sm text-muted-foreground">No visible documents are linked to this guideline.</p>}
         </div>
       </section>
     </div>

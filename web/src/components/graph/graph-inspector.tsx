@@ -8,7 +8,7 @@ import type { GraphEdge, GraphNode } from "@/lib/types";
 
 const endpoint = (value: unknown) => typeof value === "string" ? value : (value as { id?: string })?.id;
 export function GraphInspector({ selected, nodes, edges, embedded = false }: { selected: GraphNode | null; nodes: GraphNode[]; edges: GraphEdge[]; embedded?: boolean }) {
-  if (!selected) return <Surface elevated={!embedded} tone={embedded ? "plain" : "default"} className="min-h-64"><h2 className="sr-only">Node inspector</h2><EmptyState title="Inspect a node" description="Select a document or requirement to see its one-hop evidence and actions." /></Surface>;
+  if (!selected) return <Surface elevated={!embedded} tone={embedded ? "plain" : "default"} className="min-h-64"><h2 className="sr-only">Node inspector</h2><EmptyState title="Inspect a node" description="Select a document or guideline to see its one-hop evidence and actions." /></Surface>;
   const connected = edges.filter(e => endpoint(e.source) === selected.id || endpoint(e.target) === selected.id || (selected.kind === "document" && e.document_id === selected.id.slice(4)));
   const byId = new Map(nodes.map(n => [n.id,n]));
   return <Surface elevated={!embedded} tone={embedded ? "plain" : "default"} className="p-4" data-testid={embedded ? undefined : "graph-inspector"}><SectionHeader title={selected.label} description={selected.kind === "document" ? `${selected.doc_type?.replaceAll("_"," ")} · Owned by ${selected.owner}` : selected.regulation_title} />

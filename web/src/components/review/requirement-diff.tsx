@@ -146,8 +146,8 @@ export function RequirementDiff({
       ) : null}
 
       <div className="grid gap-4 p-4 md:grid-cols-2">
-        <Panel label="Previous requirement" requirement={previous} tone="previous" />
-        <Panel label="New requirement" requirement={proposed} tone="current" />
+        <Panel label="Previous guideline" requirement={previous} tone="previous" />
+        <Panel label="New guideline" requirement={proposed} tone="current" />
       </div>
 
       {previous?.requirement_text && proposed?.requirement_text ? (

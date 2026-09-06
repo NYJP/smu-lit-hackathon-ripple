@@ -82,8 +82,8 @@ export function RegulationDetailPage() {
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium">Extracted requirements</h2>
-          <span className="text-sm text-muted-foreground">{data.requirements.length} requirements</span>
+          <h2 className="font-medium">Extracted guidelines</h2>
+          <span className="text-sm text-muted-foreground">{data.requirements.length} guidelines</span>
         </div>
         <div className="mt-3 divide-y rounded-lg border">
           {data.requirements.length ? data.requirements.map((requirement) => (
@@ -96,7 +96,7 @@ export function RegulationDetailPage() {
               </div>
               <p className="mt-3 text-sm leading-6">{requirement.requirement_text}</p>
             </article>
-          )) : <p className="p-6 text-center text-sm text-muted-foreground">No requirements were extracted from this file.</p>}
+          )) : <p className="p-6 text-center text-sm text-muted-foreground">No guidelines were extracted from this file.</p>}
         </div>
       </section>
     </div>

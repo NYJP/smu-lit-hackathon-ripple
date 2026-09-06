@@ -81,7 +81,7 @@ function RequirementPanel({ label, requirement }: { label: string; requirement: 
       <div className="mt-3 flex flex-wrap items-center gap-2"><Badge variant="outline" className="capitalize">{requirement.requirement_type}</Badge>{requirement.source_section ? <span className="text-xs text-muted-foreground">{requirement.source_section}</span> : null}</div>
       <p className="mt-3 text-sm leading-6">{requirement.requirement_text}</p>
       {requirement.value ? <p className="mt-3 text-xs text-muted-foreground">Value: {requirement.value}</p> : null}
-    </> : <p className="mt-3 text-sm text-muted-foreground">No requirement for this version.</p>}
+    </> : <p className="mt-3 text-sm text-muted-foreground">No guideline for this version.</p>}
   </div>;
 }
 
@@ -124,8 +124,8 @@ export function ChangeDetailPage() {
     {data.regulation ? <Link href={`/regulations/${data.regulation.id}`} className="mt-7 flex items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/40"><Scale className="size-5 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="text-xs text-muted-foreground">Source regulation</p><p className="truncate font-medium">{data.regulation.title}</p></div><ArrowUpRight className="size-4 text-muted-foreground" /></Link> : null}
 
     <section className="mt-8">
-      <h2 className="font-medium">Requirement change</h2>
-      <div className="mt-3 grid gap-4 md:grid-cols-2"><RequirementPanel label="Previous requirement" requirement={data.previous_requirement} /><RequirementPanel label="New requirement" requirement={data.new_requirement} /></div>
+      <h2 className="font-medium">Guideline change</h2>
+      <div className="mt-3 grid gap-4 md:grid-cols-2"><RequirementPanel label="Previous guideline" requirement={data.previous_requirement} /><RequirementPanel label="New guideline" requirement={data.new_requirement} /></div>
     </section>
 
     <section className="mt-8">

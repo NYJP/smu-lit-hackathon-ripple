@@ -178,7 +178,7 @@ export function SimulationDetailPage() {
       <PageHeader
         eyebrow={<SimulatedBadge />}
         title={data.simulation.name}
-        description="Hypothetical only — nothing in your requirements, uploaded files, or documents has changed."
+        description="Hypothetical only — nothing in your guidelines, uploaded files, or documents has changed."
         actions={
           <>
             <Button variant="outline" onClick={() => void save()}>
